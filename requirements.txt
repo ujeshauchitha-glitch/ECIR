@@ -2,3 +2,5 @@ numpy
 # Only needed for data.load_market_vectors / load_real_corpus (reads the
 # real EA-MPD .xlsx market-reaction file). Not needed for run_demo.py.
 openpyxl
+# Only needed for fusion_head.py (the retrieval-augmented prediction model).
+torch
