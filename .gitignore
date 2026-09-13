@@ -1,0 +1,9 @@
+# Real data stays local only -- too big for GitHub (one file is 390MB,
+# GitHub hard-blocks anything over 100MB) and shouldn't live in git history
+# anyway. See README.md for what's expected here and where it comes from.
+/data/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
