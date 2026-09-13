@@ -3,10 +3,13 @@ Retrieval evaluation metrics, per proposal Sec 6:
   - nDCG@{5,10} and MAP on ECB-Precedent
   - Significance via paired bootstrap resampling over query events
     (1,000 resamples), 95% CIs, Holm-corrected pairwise significance
+  - Downstream prediction quality: directional accuracy, Spearman's rho,
+    R^2, each with bootstrap confidence intervals
 """
 from __future__ import annotations
 
 import numpy as np
+from scipy.stats import spearmanr
 
 
 def dcg_at_k(relevances: list[float], k: int) -> float:
@@ -92,6 +95,57 @@ def paired_bootstrap_pvalue(
         resampled_means[i] = centered[idx].mean()
     p = float(np.mean(np.abs(resampled_means) >= np.abs(observed)))
     return p
+
+
+def directional_accuracy(y_true: list[float], y_pred: list[float]) -> float:
+    """Fraction of examples where the predicted and actual stance have the
+    same sign (both hawkish, both dovish). A sign of exactly 0 counts as
+    matching only if the other side is also exactly 0.
+    """
+    yt, yp = np.asarray(y_true), np.asarray(y_pred)
+    return float(np.mean(np.sign(yt) == np.sign(yp)))
+
+
+def r_squared(y_true: list[float], y_pred: list[float]) -> float:
+    """Coefficient of determination, 1 - SS_res/SS_tot. Can be negative
+    (worse than predicting the mean) -- do not clip that away.
+    """
+    yt, yp = np.asarray(y_true), np.asarray(y_pred)
+    ss_res = float(np.sum((yt - yp) ** 2))
+    ss_tot = float(np.sum((yt - yt.mean()) ** 2))
+    if ss_tot == 0:
+        return 0.0
+    return 1.0 - ss_res / ss_tot
+
+
+def spearman_rho(y_true: list[float], y_pred: list[float]) -> float:
+    rho, _ = spearmanr(y_true, y_pred)
+    return float(rho)
+
+
+def bootstrap_metric_ci(
+    y_true: list[float],
+    y_pred: list[float],
+    metric_fn,
+    n_resamples: int = 1000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> tuple[float, float, float]:
+    """Nonparametric bootstrap over (y_true, y_pred) PAIRS (not queries --
+    for metrics computed on one flat set of predictions rather than
+    per-query lists). Returns (point_estimate, lower, upper).
+    """
+    yt, yp = np.asarray(y_true), np.asarray(y_pred)
+    n = len(yt)
+    point = metric_fn(yt, yp)
+    rng = np.random.default_rng(seed)
+    vals = np.empty(n_resamples)
+    for b in range(n_resamples):
+        idx = rng.integers(0, n, size=n)
+        vals[b] = metric_fn(yt[idx], yp[idx])
+    alpha = 1 - ci
+    lower, upper = np.percentile(vals, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return float(point), float(lower), float(upper)
 
 
 def holm_correction(pvalues: dict[str, float], alpha: float = 0.05) -> dict[str, tuple[float, bool]]:

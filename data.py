@@ -207,6 +207,37 @@ MARKET_VECTOR_COLUMNS = (
     "EURUSD",  # FX reaction (stand-in; no volatility series available)
 )
 
+# ---------------------------------------------------------------------------
+# STANCE LABEL -- NOT specified anywhere in the proposal. This is a pragmatic
+# choice made on 2026-09-13 to unblock training fusion_head.py, after
+# confirming with the user that neither this project nor the concurrent
+# encoder-training submission has a stance definition yet ("I didnt / I am
+# working on continuous stance predictions / that part is yet to implement
+# / for me as well" -- teammate, same day). It is NOT an authoritative
+# construct and must be written up in the paper as an explicit modeling
+# choice ("we define stance as ..., because ..."), not presented as if it
+# were always the plan.
+#
+# Definition: stance = the realized change in the 1-year OIS rate (basis
+# points) in the event window. Positive = rates expected higher = hawkish
+# surprise; negative = dovish surprise. This is a standard, citable move in
+# the monetary-surprise literature (a single short/medium-maturity rate as
+# the summary "policy shock", in the spirit of Gurkaynak-Sack-Swanson 2005's
+# "target factor") -- chosen over averaging multiple OIS maturities for
+# interpretability (one real, named instrument) and because OIS_1Y has zero
+# missing values across all 228 matched events (see MARKET_VECTOR_COLUMNS
+# comment above re: missingness in longer maturities).
+# REVISIT if/when the teammate's own definition becomes available -- swap
+# this out and re-run rather than maintaining two divergent definitions.
+STANCE_COLUMN = "OIS_1Y"
+
+
+def stance_label(market_vector: np.ndarray) -> float:
+    """Extracts the stance label (see STANCE_COLUMN note above) from a
+    market_vector built with MARKET_VECTOR_COLUMNS. Basis points, signed.
+    """
+    return float(market_vector[MARKET_VECTOR_COLUMNS.index(STANCE_COLUMN)])
+
 
 def _parse_eamPd_date(value) -> dt.date:
     """Dataset_EA-MPD.xlsx mixes real Excel datetimes (older rows) with
