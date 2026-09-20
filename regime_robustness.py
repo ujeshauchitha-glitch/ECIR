@@ -228,9 +228,16 @@ def main():
     print("-" * 72)
     same_regime_fracs = []
     for q in [e for e in events if regime(e.date) == "post_hiking"]:
-        candidates = [e for e in events if e.event_id != q.event_id]
+        # Strictly-earlier events only, text-only retrieval: exactly the pool
+        # and method the prediction pipeline uses (see train.build_examples).
+        # An earlier version drew from ALL other events, letting a post-2022
+        # query "retrieve" later post-2022 events -- a time leak that made
+        # this diagnostic meaningless.
+        candidates = [e for e in events if e.date < q.date]
+        if len(candidates) < K:
+            continue
         ranked_ids = rank_candidates(
-            q, candidates, "hybrid", encoder=encoder, doc_text_by_event=doc_text, lam=0.5, tau=1.0,
+            q, candidates, "dense_text_only", encoder=encoder, doc_text_by_event=doc_text,
         )[:K]
         cand_by_id = {e.event_id: e for e in candidates}
         regimes_retrieved = [regime(cand_by_id[cid].date) for cid in ranked_ids]

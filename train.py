@@ -57,21 +57,33 @@ LR = 1e-3
 SEED = 0
 
 
-def build_examples(events, encoder, embeddings, k=K, lam=LAM, tau=TAU):
+def build_examples(events, encoder, embeddings, k=K, lam=LAM, tau=TAU, leaky=False):
     """For each event (in date order), retrieves up to k STRICTLY EARLIER
-    events by hybrid similarity. Returns a list of dicts; events with zero
-    available history are skipped (there is nothing to retrieve).
+    events. Returns a list of dicts; events with zero available history are
+    skipped (there is nothing to retrieve).
+
+    LEAKAGE BOUNDARY (proposal Sec 4): at genuine prediction time m_q is
+    unobserved, so retrieval must not use the query's own market vector --
+    the stance label is computed from that vector, so using it to pick
+    precedents hands the model a peek at the answer. With leaky=False
+    (default) m_q=None is passed, so hybrid_similarity takes its explicit
+    text-only fallback (retrieval by text similarity alone; the candidates'
+    KNOWN outcomes still reach the fusion head as the retrieved evidence).
+    leaky=True reproduces the original, invalid setup and exists ONLY to
+    quantify how much the leak inflated earlier results -- never report
+    numbers from it as results.
     """
     examples = []
     for i, q in enumerate(events):
         history = events[:i]  # strictly earlier, by construction (events is date-sorted)
         if not history:
             continue
+        m_q = q.market_vector if leaky else None
         scored = []
         for c in history:
             res = hybrid_similarity(
                 embeddings[q.event_id], embeddings[c.event_id],
-                c.market_vector, q.market_vector, lam=lam, tau=tau,
+                c.market_vector, m_q, lam=lam, tau=tau,
             )
             scored.append((res.score, c))
         scored.sort(key=lambda x: -x[0])

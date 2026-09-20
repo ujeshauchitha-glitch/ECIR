@@ -188,8 +188,8 @@ if __name__ == "__main__":
     query_event = events[0]
     candidates = [e for e in events if e.event_id != query_event.event_id]
     ranked_ids = rank_candidates(
-        query_event, candidates, "hybrid",
-        encoder=encoder, doc_text_by_event=doc_text_by_event, lam=0.5, tau=1.0,
+        query_event, candidates, "dense_text_only",
+        encoder=encoder, doc_text_by_event=doc_text_by_event,
     )[:k]
     cand_by_id = {e.event_id: e for e in candidates}
 
@@ -208,7 +208,7 @@ if __name__ == "__main__":
             e_q.squeeze(0).numpy(),
             encoder.embed(doc_text_by_event[cid]),
             cand_by_id[cid].market_vector,
-            query_event.market_vector,
+            None,  # m_q unobserved at prediction time (text-only fallback)
             lam=0.5, tau=1.0,
         ).score
         for cid in ranked_ids

@@ -21,6 +21,7 @@ paper) can be honest about which regime produced which result.
 from __future__ import annotations
 
 import dataclasses
+import zlib
 from typing import Callable, Optional
 
 import numpy as np
@@ -60,7 +61,10 @@ def make_stub_encoder(dim: int = 32, seed: int = 0) -> FrozenEncoder:
             if w not in word_vectors:
                 # Deterministic per-word vector, seeded off the word itself
                 # so the same word always maps to the same vector.
-                h = abs(hash(w)) % (2**32)
+                # zlib.crc32, NOT builtin hash(): str hash() is salted per
+                # process (PYTHONHASHSEED), which made this "deterministic"
+                # stub return different embeddings on every run.
+                h = zlib.crc32(w.encode("utf-8"))
                 word_vectors[w] = np.random.default_rng(h).normal(0, 1, size=dim)
             vecs.append(word_vectors[w])
         if not vecs:

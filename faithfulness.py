@@ -59,12 +59,16 @@ SEED = 0
 
 
 def rank_history(q, history, embeddings, lam=LAM, tau=TAU):
-    """All strictly-earlier events, scored against q and sorted best-first."""
+    """All strictly-earlier events, scored against q and sorted best-first.
+    m_q is deliberately NOT passed (text-only fallback): the query's own
+    market outcome is unobserved at prediction time and the stance label is
+    derived from it -- see train.build_examples's LEAKAGE BOUNDARY note.
+    """
     scored = []
     for c in history:
         res = hybrid_similarity(
             embeddings[q.event_id], embeddings[c.event_id],
-            c.market_vector, q.market_vector, lam=lam, tau=tau,
+            c.market_vector, None, lam=lam, tau=tau,
         )
         scored.append((res.score, c))
     scored.sort(key=lambda x: -x[0])
