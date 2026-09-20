@@ -123,29 +123,60 @@ def gaussian_nll(s_hat, sigma_hat, target):
     return 0.5 * (((target - s_hat) / sigma_hat) ** 2 + 2 * torch.log(sigma_hat))
 
 
+def _val_mse(model, val_ex, embed_dim, market_dim, k, is_fusion, label_mean, label_std):
+    """Mean squared error of s_hat on validation examples, in standardized label units."""
+    tot = 0.0
+    with torch.no_grad():
+        for ex in val_ex:
+            target = (ex["label"] - label_mean) / label_std
+            if is_fusion:
+                e_q, m, s = to_batch(ex, embed_dim, market_dim, k)
+                out = model(e_q, m, s)
+            else:
+                out = model(torch.tensor(ex["e_q"], dtype=torch.float32).unsqueeze(0))
+            tot += (float(out.s_hat.item()) - target) ** 2
+    return tot / len(val_ex)
+
+
 def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean, label_std, epochs=EPOCHS, lr=LR, seed=SEED,
-                use_uncertainty=True, freeze_attention=False, verbose=True, standardize_inputs=True):
+                use_uncertainty=True, freeze_attention=False, verbose=True, standardize_inputs=True,
+                early_stopping_frac=0.2, min_examples_for_early_stopping=30):
     """use_uncertainty=False trains s_hat alone with squared error (the proposal's
     'absence of the uncertainty output' ablation). freeze_attention=True freezes the
     cross-attention projections at their random init and trains only the regression
     head (one reading of the proposal's 'frozen versus fine-tuned fusion' ablation --
-    encoder fine-tuning itself is not possible with the stub encoder)."""
+    encoder fine-tuning itself is not possible with the stub encoder).
+
+    EARLY STOPPING (added 2026-09-20 after unregularised 150-epoch training overfit badly: ~5k parameters
+    on ~250 noisy examples gave held-out R^2 of -9 to -33): the chronologically LATEST
+    `early_stopping_frac` of the training examples are held out as a validation set, the epoch with the
+    lowest validation MSE is kept and its weights restored. `examples` must therefore be in date order
+    (build_examples returns them so). Nothing outside the training window is ever used -- held-out
+    evaluation data stays untouched. Both heads are treated identically. Skipped when there are fewer
+    than `min_examples_for_early_stopping` examples or early_stopping_frac is falsy. The selected epoch
+    is left on `model.best_epoch` (-1 if early stopping was not used).
+    """
     torch.manual_seed(seed)
+    fit_ex, val_ex = examples, []
+    if early_stopping_frac and len(examples) >= min_examples_for_early_stopping:
+        n_val = max(1, int(round(len(examples) * early_stopping_frac)))
+        fit_ex, val_ex = examples[:-n_val], examples[-n_val:]
     if is_fusion and standardize_inputs:
         # Standardize the retrieved outcome vectors with statistics of the TRAINING examples' retrieved
         # sets (past events only) -- never anything from validation/test.
-        rows = np.concatenate([ex["retrieved_m"] for ex in examples], axis=0)
+        rows = np.concatenate([ex["retrieved_m"] for ex in fit_ex], axis=0)
         model.set_input_stats(rows.mean(0), rows.std(0))
     if freeze_attention and is_fusion:
         for name in ("query_proj", "key_proj", "value_proj"):
             for prm in getattr(model, name).parameters():
                 prm.requires_grad_(False)
     opt = torch.optim.Adam([prm for prm in model.parameters() if prm.requires_grad], lr=lr)
+    best_val, best_state, best_epoch = float("inf"), None, -1
     for epoch in range(epochs):
         total_loss = 0.0
-        order = np.random.default_rng(seed + epoch).permutation(len(examples))
+        order = np.random.default_rng(seed + epoch).permutation(len(fit_ex))
         for idx in order:
-            ex = examples[idx]
+            ex = fit_ex[idx]
             target = torch.tensor([(ex["label"] - label_mean) / label_std], dtype=torch.float32)
             if is_fusion:
                 e_q, m, s = to_batch(ex, embed_dim, market_dim, k)
@@ -159,8 +190,19 @@ def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean
             loss.backward()
             opt.step()
             total_loss += float(loss.item())
+        if val_ex:
+            v = _val_mse(model, val_ex, embed_dim, market_dim, k, is_fusion, label_mean, label_std)
+            if v < best_val:
+                best_val, best_epoch = v, epoch
+                best_state = {n: t.detach().clone() for n, t in model.state_dict().items()}
         if verbose and (epoch % 30 == 0 or epoch == epochs - 1):
-            print(f"    epoch {epoch:3d}  mean NLL {total_loss / len(examples):.4f}")
+            print(f"    epoch {epoch:3d}  mean loss {total_loss / len(fit_ex):.4f}"
+                  + (f"  val MSE {v:.4f}" if val_ex else ""))
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        if verbose:
+            print(f"    early stopping: kept epoch {best_epoch} (validation MSE {best_val:.4f}, n_val={len(val_ex)})")
+    model.best_epoch = best_epoch
     return model
 
 

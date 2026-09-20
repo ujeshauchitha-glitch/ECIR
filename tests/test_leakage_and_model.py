@@ -202,3 +202,52 @@ def test_input_stats_come_from_training_examples_only():
     raw = FusionHead(16, 9)
     train.train_model(raw, train_ex, 16, 9, 5, True, 0.0, 1.0, epochs=1, verbose=False, standardize_inputs=False)
     assert torch.equal(raw.m_mean, torch.zeros(9))                        # switch off -> untouched
+
+
+# ---------------- early stopping ----------------
+def _toy_examples(n, flip_last_fraction=0.0, seed=0):
+    rng = np.random.default_rng(seed)
+    exs = []
+    for i in range(n):
+        rm = rng.normal(size=(5, 9)).astype(np.float32)
+        y = float(rm[:, 3].mean())
+        if i >= n * (1 - flip_last_fraction):
+            y = -y                                        # validation slice contradicts the training signal
+        exs.append({"e_q": rng.normal(size=16).astype(np.float32), "retrieved_m": rm,
+                    "sim_scores": np.ones(5, np.float32), "label": y})
+    return exs
+
+
+def test_early_stopping_uses_the_latest_training_slice_and_restores_the_best_epoch():
+    exs = _toy_examples(100, flip_last_fraction=0.2)      # last 20 (the validation slice) have flipped labels
+    torch.manual_seed(0)
+    m = FusionHead(16, 9)
+    train.train_model(m, exs, 16, 9, 5, True, 0.0, 1.0, epochs=40, verbose=False)
+    assert 0 <= m.best_epoch < 39                          # validation got worse as training proceeded -> stopped early
+    val = exs[-20:]
+    torch.manual_seed(0)
+    m_full = FusionHead(16, 9)
+    train.train_model(m_full, exs[:-20], 16, 9, 5, True, 0.0, 1.0, epochs=40, verbose=False, early_stopping_frac=0)  # same 80 fit examples
+    assert m_full.best_epoch == -1
+    v_es = train._val_mse(m, val, 16, 9, 5, True, 0.0, 1.0)
+    v_full = train._val_mse(m_full, val, 16, 9, 5, True, 0.0, 1.0)
+    assert v_es < v_full                                   # restoring the best epoch beat training to the end
+
+
+def test_early_stopping_skipped_for_tiny_training_sets():
+    exs = _toy_examples(20)
+    m = FusionHead(16, 9)
+    train.train_model(m, exs, 16, 9, 5, True, 0.0, 1.0, epochs=2, verbose=False)
+    assert m.best_epoch == -1
+
+
+def test_early_stopping_never_looks_at_examples_outside_the_list_it_is_given():
+    exs = _toy_examples(60)
+    heldout = _toy_examples(30, seed=9)
+    torch.manual_seed(0)
+    a = FusionHead(16, 9); train.train_model(a, exs, 16, 9, 5, True, 0.0, 1.0, epochs=5, verbose=False)
+    for e in heldout:                                     # scramble held-out data completely
+        e["label"] = 1e6; e["retrieved_m"] = e["retrieved_m"] * 1e3
+    torch.manual_seed(0)
+    b = FusionHead(16, 9); train.train_model(b, exs, 16, 9, 5, True, 0.0, 1.0, epochs=5, verbose=False)
+    assert all(torch.equal(x, y) for x, y in zip(a.state_dict().values(), b.state_dict().values()))

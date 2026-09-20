@@ -1,6 +1,0 @@
-========================================================================
-Regime-stratified robustness analysis -- REAL data. Same caveats
-as train.py/faithfulness.py, PLUS small per-regime n (post_hiking
-has very few events -- it's a regime that only started
-mid-2022). Read every CI.
-========================================================================
