@@ -1,11 +1,9 @@
 """
 Multi-seed faithfulness (proposal Sec 5-6 protocol), because a single trained model is not enough.
 
-After the reproducibility fix (weights were previously unseeded), the single-model result in
-faithfulness.py turned out to depend strongly on the initialisation: the same protocol gave
-rho ~ 0.37 (CI excluding 0) for one initialisation and ~ 0.07 (CI including 0) for another.
-So the honest statement of the faithfulness result is the distribution over initialisations,
-which is what this script reports.
+The single-model result in faithfulness.py depends on the initialisation (during development the same
+protocol gave a CI excluding 0 for one initialisation and a CI including 0 for another), so the honest
+statement of the faithfulness result is the distribution over initialisations, which is what this script reports.
 
 For each seed: train FusionHead exactly as train.py does (train < 2020), perturb every test-split
 query's evidence (swap the top precedent for the next-ranked / a random one; ablate the most /
@@ -14,7 +12,12 @@ rank test. Summary: per-seed values, their mean/sd, how many seeds have a CI exc
 pooled estimate (pooling perturbations across seeds treats them as independent, which they are not
 -- the per-seed numbers are the primary result, the pooled CI is an optimistic convenience).
 
-Writes results/faithfulness_seeds.json.  Usage: python faithfulness_seeds.py [--seeds 5]
+CONTROL (--shuffle): the same protocol on models trained with the training labels PERMUTED, i.e. models with no
+possible real skill. A model that has learned nothing is still a smooth function of its inputs, so swapping
+evidence still moves its output; if this control shows the same "faithfulness" as the real models, then
+perturbation sensitivity alone cannot show that evidence is load-bearing and must not be presented as such.
+
+Writes results/faithfulness_seeds.json (or ..._shuffled.json).  Usage: python faithfulness_seeds.py [--seeds 5] [--shuffle]
 """
 from __future__ import annotations
 
@@ -39,6 +42,10 @@ def main():
     ex = make_examples(setup, Cfg())
     tr = [e for e in ex if e["event"].date.year < 2020]
     te = [e for e in ex if e["event"].date.year >= 2023]
+    shuffle = "--shuffle" in sys.argv
+    if shuffle:  # CONTROL: break the label <-> input relationship (fixed permutation, examples stay in date order)
+        perm = np.random.default_rng(1234).permutation(len(tr))
+        tr = [dict(e, label=tr[j]["label"]) for e, j in zip(tr, perm)]
     labels = np.array([e["label"] for e in tr])
     mu, sd = float(labels.mean()), float(labels.std() + 1e-8)
 
@@ -81,7 +88,8 @@ def main():
         "seeds_with_rank_p_below_0.05": int(sum(r["rank_p"] < 0.05 for r in per_seed)),
         "pooled_rho_optimistic_ci": list(pooled),
     }
-    save_json("faithfulness_seeds.json", out)
+    out["control_shuffled_training_labels"] = shuffle
+    save_json("faithfulness_seeds_shuffled.json" if shuffle else "faithfulness_seeds.json", out)
     print(f"mean rho {out['rho_mean']:.3f} +/- {out['rho_sd']:.3f}; CI>0 in {out['seeds_with_ci_above_zero']}/{n_seeds} seeds")
 
 

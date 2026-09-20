@@ -13,7 +13,7 @@ All five contributions in the proposal have working, tested code running on **re
 the ECB-Precedent benchmark, the hybrid retriever + baselines, the retrieval-augmented prediction
 model (cross-attention fusion head), the causal faithfulness protocol, and the regime-stratified
 robustness analysis, plus ablations and rolling-origin / leave-one-meeting-out cross-validation.
-**No number in this repo is a paper result yet**, for three reasons that only the owner/teammate can
+With the placeholder encoder there is **no out-of-sample prediction skill** (HANDOFF.md has the numbers). **No number in this repo is a paper result yet**, for three reasons that only the owner/teammate can
 remove: (1) the text encoder is still a **stub** (`similarity.make_stub_encoder`, a hash bag-of-words
 with no semantics), so every text-similarity number is placeholder-quality; (2) the **stance
 definition** is a stand-in (1-year OIS change), because the proposal never defines one and the
@@ -33,7 +33,7 @@ kernel (squared vs plain L2) are unresolved design questions in the proposal (se
 ```
 pip install -r requirements.txt
 python fetch_ecb_pressconf.py     # once; ~10 min, polite 1 req/s, validated + cached under data/ecb_pressconf
-python -m pytest tests -q         # 64 tests
+python -m pytest tests -q         # 86 tests
 python run_demo.py                # synthetic-data plumbing check (numbers meaningless)
 python run_real.py                # retrieval quality          -> results/retrieval_quality.json
 python train.py                   # downstream prediction      -> results/downstream_train_py.json
@@ -41,8 +41,12 @@ python faithfulness.py            # perturbation protocol      -> results/faithf
 python regime_robustness.py       # ZLB / post-hiking analysis -> results/regime_robustness.json
 python ablations.py               # lambda/tau/kernel, k, uncertainty, frozen attention, stance defs, controls
 python cv.py                      # rolling-origin CV          -> results/cv_rolling.json
-python cv.py --lomo --stride 3    # leave-one-meeting-out (every 3rd meeting)
+python cv.py --lomo --stride 3    # leave-one-meeting-out (one in every 3 meetings)
+python faithfulness_seeds.py [--shuffle]   # faithfulness across 5 initialisations (+ no-skill control)
+python leak_control.py            # measures the retrieval leak (invalid setup, for the record)
+python make_paper.py              # builds paper/paper.md from results/*.json
 ```
+To use a real encoder everywhere: `export PRECEDENT_ENCODER=<checkpoint>` (see HANDOFF.md), then re-run all of the above.
 Set `OMP_NUM_THREADS=1` and run the long jobs in parallel — the networks are tiny (batch size 1).
 
 ## Files
@@ -57,9 +61,9 @@ Set `OMP_NUM_THREADS=1` and run the long jobs in parallel — the networks are t
 | `train.py` | Leak-free training/eval, chronological split (train<2020, val 2020–22, test ≥2023) |
 | `faithfulness.py` | Evidence-perturbation protocol + built-in validity check |
 | `regime_robustness.py` | pre-ZLB / ZLB / post-hiking stratification |
-| `pipeline.py`, `ablations.py`, `cv.py` | Shared experiment plumbing; ablations; cross-validation |
+| `pipeline.py`, `ablations.py`, `cv.py`, `faithfulness_seeds.py`, `leak_control.py` | Shared experiment plumbing; ablations + controls; cross-validation; multi-seed faithfulness; leak measurement |
 | `fetch_ecb_pressconf.py` | Fetches/validates the ECB's official press-conference statements |
-| `tests/` | 64 tests: hand-computed metric answers, leakage-boundary tests, model-structure tests, data-link checks |
+| `tests/` | 86 tests: hand-computed metric answers, leakage-boundary, model structure, early stopping, data links, results contract |
 | `results/` | JSON outputs of every experiment (+ `logs/`) |
 | `paper/` | Draft manuscript; tables are generated from `results/*.json` by `make_paper.py` |
 

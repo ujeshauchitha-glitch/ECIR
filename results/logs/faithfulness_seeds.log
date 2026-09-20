@@ -1,0 +1,6 @@
+seed 0: rho 0.549 [0.291, 0.731]  rank-test p=0.647
+seed 1: rho 0.756 [0.559, 0.877]  rank-test p=0.562
+seed 2: rho 0.585 [0.353, 0.758]  rank-test p=0.387
+seed 3: rho 0.718 [0.535, 0.822]  rank-test p=0.252
+seed 4: rho 0.231 [-0.078, 0.493]  rank-test p=0.704
+mean rho 0.568 +/- 0.186; CI>0 in 4/5 seeds

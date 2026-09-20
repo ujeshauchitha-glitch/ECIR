@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 
 NL = chr(10)
@@ -141,8 +142,14 @@ def table_lomo():
     for who, name in (("fusion", "Retrieval-augmented"), ("baseline", "Non-augmented"), ("train_mean", "Training-mean reference")):
         for grp in ("all", "pre_zlb", "zlb", "post_hiking"):
             g = r["report"][who][grp]
-            rows.append([name, f"{grp} (n={g['n']})"] + (["too few events"] * 3 if "note" in g else [ci(g["dir_acc"]), ci(g["spearman"]), ci(g["r2"])]))
-    return f"*Protocol: {r['protocol']}.*\n\n" + md_table(["Model", "Regime (n)", "Directional acc.", "Spearman rho", "R^2"], rows)
+            if "note" in g:
+                rows.append([name, f"{grp} (n={g['n']})", "too few events", "", ""])
+                continue
+            rho = ("n/a (leave-one-out mean is anti-correlated with the held-out label by construction)"
+                   if who == "train_mean" else ci(g["spearman"]))
+            rows.append([name, f"{grp} (n={g['n']})", ci(g["dir_acc"]), rho, ci(g["r2"])])
+    proto = re.sub(r"every (\d+)th meeting", r"one in every \1 meetings", r["protocol"])
+    return f"*Protocol: {proto}.*" + NL + NL + md_table(["Model", "Regime (n)", "Directional acc.", "Spearman rho", "R^2"], rows)
 
 
 def table_faith():
@@ -172,7 +179,17 @@ def table_faith():
             f"{fs['seeds_with_rank_p_below_0.05']}/{fs['n_seeds']} seeds. Pooled over seeds (optimistic, perturbations are not independent): {ci(fs['pooled_rho_optimistic_ci'])}.")
     note = ("**Stability across initialisations** (the single-model result above depends on the initialisation, "
             "so this is the primary faithfulness result):")
-    return t1 + NL + NL + note + NL + NL + t2 + NL + NL + summ
+    ctl = load("faithfulness_seeds_shuffled.json")
+    if ctl:
+        cs = (f"**Control -- models trained on shuffled labels (no possible skill):** mean rho = {ctl['rho_mean']:.3f} (sd {ctl['rho_sd']:.3f}); "
+              f"CI excludes 0 in {ctl['seeds_with_ci_above_zero']}/{ctl['n_seeds']} seeds. "
+              + ("Because the no-skill control shows a comparable swap-size/shift correlation, this metric measures the model's smooth "
+                 "sensitivity to its inputs and **cannot by itself show that retrieved evidence is causally load-bearing**."
+                 if ctl["rho_mean"] > 0.5 * fs["rho_mean"] else
+                 "The control shows a clearly weaker correlation than the real models."))
+    else:
+        cs = todo("faithfulness_seeds.py --shuffle")
+    return t1 + NL + NL + note + NL + NL + t2 + NL + NL + summ + NL + NL + cs
 
 
 def table_regime():
@@ -243,6 +260,10 @@ def auto_findings():
     if fs:
         out.append(f"Faithfulness across {fs['n_seeds']} initialisations: rho(swap size, |shift|) mean {fs['rho_mean']:.3f} (sd {fs['rho_sd']:.3f}); "
                    f"CI excludes 0 in {fs['seeds_with_ci_above_zero']}/{fs['n_seeds']} seeds -- a result that varies this much with the initialisation is not a stable finding.")
+    ctl = load("faithfulness_seeds_shuffled.json")
+    if ctl:
+        out.append(f"Faithfulness control (shuffled-label models): mean rho {ctl['rho_mean']:.3f} (sd {ctl['rho_sd']:.3f}), CI>0 in {ctl['seeds_with_ci_above_zero']}/{ctl['n_seeds']} seeds "
+                   "-- compare with the real models above before reading anything into the faithfulness numbers.")
     f = load("faithfulness.json")
     if f:
         mt = f["magnitude_test"]
@@ -420,7 +441,9 @@ swap the top precedent for the next-ranked / a random one and correlate the size
 {table_regime()}
 
 ### 5.6 Ablations and controls
-**Table 8.** Multi-seed downstream ablations (mean +/- sd over seeds; held-out = 2020 onward). Neighbour count k, presence/absence of the
+**Table 8.** Multi-seed downstream ablations (mean +/- sd over seeds; held-out = 2020 onward). **The sd reflects random initialisation only -- it is NOT
+the sampling uncertainty of the small held-out set, so "fusion > baseline in k/k seeds" is descriptive, not a significance test; compare with the
+pooled rolling-origin evaluation in Table 4, which uses many more events.** Neighbour count k, presence/absence of the
 uncertainty output, frozen cross-attention (one reading of "frozen vs fine-tuned fusion"; encoder fine-tuning is not possible with the
 placeholder encoder), alternative stance definitions, and a **shuffled-label control**. lambda and tau cannot affect downstream results
 because prediction-time retrieval is text-only; they are swept in Table 2.
@@ -443,7 +466,7 @@ because prediction-time retrieval is text-only; they are swept in Table 2.
 **[TODO: write after the trained-encoder run.]**
 
 ## Reproducibility
-Code, tests (72), and the scripts that generate every table are provided; corpus and event data are referenced to their public sources
+Code, the test suite, and the scripts that generate every table are provided; corpus and event data are referenced to their public sources
 (ECB website; EA-MPD) rather than redistributed. Runs are seeded; results JSON files accompany the code.
 
 ## References

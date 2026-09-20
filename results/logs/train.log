@@ -1,0 +1,60 @@
+========================================================================
+Training run -- REAL data, PRAGMATIC stance label (see module
+docstring), encoder STILL A STUB. Read the caveats before citing
+any number this script prints.
+========================================================================
+
+273 real events -> 272 usable examples (1 skipped: no prior history to retrieve).
+split: train=225  val=24  test=23
+train-set stance label (OIS_1Y bp): mean=0.200 std=4.483
+
+Training FusionHead (retrieval-augmented) ...
+    epoch   0  mean loss 0.7233  val MSE 0.3161
+    epoch  20  no validation improvement for 20 epochs -> stop
+    early stopping: kept epoch 0 (validation MSE 0.3161, n_val=45)
+
+Training NonAugmentedHead (baseline, no retrieval) ...
+    epoch   0  mean loss 0.7962  val MSE 0.2520
+    epoch  20  no validation improvement for 20 epochs -> stop
+    early stopping: kept epoch 0 (validation MSE 0.2520, n_val=45)
+
+========================================================================
+RESULTS
+========================================================================
+
+--- val ---
+  FusionHead (retrieval-augmented) (n=24):
+    directional accuracy     0.542  [0.375, 0.750]
+    Spearman rho             0.065  [-0.344, 0.479]
+    R^2                     -0.038  [-0.669, 0.077]
+  NonAugmentedHead (baseline) (n=24):
+    directional accuracy     0.542  [0.333, 0.750]
+    Spearman rho             0.042  [-0.438, 0.499]
+    R^2                     -0.034  [-0.397, -0.001]
+  Reference: predict the training mean (n=24):
+    directional accuracy     0.542  [0.333, 0.750]
+    Spearman rho               n/a  (constant predictor)
+    R^2                     -0.045  [-0.453, -0.000]
+
+--- test ---
+  FusionHead (retrieval-augmented) (n=23):
+    directional accuracy     0.609  [0.391, 0.783]
+    Spearman rho             0.082  [-0.372, 0.477]
+    R^2                      0.004  [-0.339, 0.086]
+  NonAugmentedHead (baseline) (n=23):
+    directional accuracy     0.435  [0.261, 0.652]
+    Spearman rho             0.314  [-0.105, 0.689]
+    R^2                     -0.033  [-0.427, 0.003]
+  Reference: predict the training mean (n=23):
+    directional accuracy     0.435  [0.261, 0.652]
+    Spearman rho               n/a  (constant predictor)
+    R^2                     -0.021  [-0.371, -0.000]
+
+========================================================================
+REMINDERS (do not drop these when reporting the numbers above):
+1. Stance label = 1yr OIS change, a pragmatic proxy chosen today,
+   not a validated construct. Frame it as a modeling choice.
+2. Encoder is the stub -- text signal is noise. Re-run once real.
+3. val n=24, test n=23. CIs are wide because n is small -- that
+   is correct behavior, not something to explain away.
+========================================================================

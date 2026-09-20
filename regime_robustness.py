@@ -226,6 +226,7 @@ def main():
         rho, lo, hi = bootstrap_metric_ci(mags, shifts, lambda a, b: spearman_rho(a, b))
         print(f"\n  regime={reg} (n={len(mags)} perturbations): "
               f"Spearman rho(perturbation magnitude, |shift|) = {rho:.3f}  [{lo:.3f}, {hi:.3f}]")
+        out_json["faithfulness"][reg] = {"rho": [rho, lo, hi], "n_perturbations": len(mags)}
 
     # ------------------------------------------------------------------
     # 4. Precedent-density diagnostic for post_hiking queries specifically

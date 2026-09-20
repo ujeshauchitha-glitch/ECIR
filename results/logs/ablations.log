@@ -1,0 +1,43 @@
+273 events with statements.
+Part 1: retrieval-quality sweep (lambda x tau x kernel) ...
+Part 2: downstream ablations (multi-seed) ...
+[    11s] main (k=5, uncertainty on, ois_1y) seed=0 done
+[    21s] main (k=5, uncertainty on, ois_1y) seed=1 done
+[    30s] main (k=5, uncertainty on, ois_1y) seed=2 done
+[    40s] main (k=5, uncertainty on, ois_1y) seed=3 done
+[    50s] main (k=5, uncertainty on, ois_1y) seed=4 done
+C:\Users\ujesh\Documents\ECIR\ablations.py:119: RuntimeWarning: Mean of empty slice
+  agg[who] = {m: (float(np.nanmean([s[who][m] for s in per_seed])), float(np.nanstd([s[who][m] for s in per_seed])))
+C:\Users\ujesh\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\numpy\lib\_nanfunctions_impl.py:1997: RuntimeWarning: Degrees of freedom <= 0 for slice.
+  var = nanvar(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+[    60s] RAW (unstandardized) market inputs seed=0 done
+[    70s] RAW (unstandardized) market inputs seed=1 done
+[    79s] RAW (unstandardized) market inputs seed=2 done
+[    88s] k=1 seed=0 done
+[    98s] k=1 seed=1 done
+[   108s] k=1 seed=2 done
+[   122s] k=3 seed=0 done
+[   133s] k=3 seed=1 done
+[   142s] k=3 seed=2 done
+[   150s] k=10 seed=0 done
+[   160s] k=10 seed=1 done
+[   168s] k=10 seed=2 done
+[   177s] k=20 seed=0 done
+[   186s] k=20 seed=1 done
+[   195s] k=20 seed=2 done
+[   204s] uncertainty OFF (MSE loss) seed=0 done
+[   211s] uncertainty OFF (MSE loss) seed=1 done
+[   219s] uncertainty OFF (MSE loss) seed=2 done
+[   225s] attention FROZEN at init seed=0 done
+[   233s] attention FROZEN at init seed=1 done
+[   239s] attention FROZEN at init seed=2 done
+[   251s] stance = ois_short_mean seed=0 done
+[   264s] stance = ois_short_mean seed=1 done
+[   274s] stance = ois_short_mean seed=2 done
+[   285s] stance = de2y seed=0 done
+[   294s] stance = de2y seed=1 done
+[   304s] stance = de2y seed=2 done
+[   319s] CONTROL: shuffled training labels seed=0 done
+[   332s] CONTROL: shuffled training labels seed=1 done
+[   356s] CONTROL: shuffled training labels seed=2 done
+done.

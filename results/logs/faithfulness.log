@@ -1,0 +1,37 @@
+========================================================================
+Causal faithfulness protocol -- REAL data, same caveats as
+train.py (stub encoder, pragmatic stance label, small n).
+========================================================================
+
+train=225  test=23 (held-out sample for this protocol)
+
+Training FusionHead and NonAugmentedHead (same setup as train.py) ...
+    epoch   0  mean loss 0.7233  val MSE 0.3161
+    epoch  20  no validation improvement for 20 epochs -> stop
+    early stopping: kept epoch 0 (validation MSE 0.3161, n_val=45)
+    epoch   0  mean loss 0.7962  val MSE 0.2520
+    epoch  20  no validation improvement for 20 epochs -> stop
+    early stopping: kept epoch 0 (validation MSE 0.2520, n_val=45)
+
+Evaluated on 23 test-set queries (skipped 0 with insufficient history for a control item).
+
+--- FusionHead: does removed-evidence rank matter? ---
+  |shift| removing rank-1 (most relevant):  0.3340  [0.2237, 0.4577]
+  |shift| removing rank-5 (least relevant): 0.3075  [0.2143, 0.4203]
+  paired bootstrap p-value (rank-1 shift vs rank-5 shift): 0.6474
+  HYPOTHESIS (INCONCLUSIVE (not statistically distinguishable at this n -- do not report this as a finding either way)): removing the most-relevant precedent should shift the prediction more than removing the least-relevant one.
+
+--- FusionHead: does the size of the swap matter? ---
+  Spearman rho(perturbation magnitude, |prediction shift|): 0.466  [0.199, 0.676]  (n=46 perturbations, 23 queries x 2 replace-conditions)
+  HYPOTHESIS (SUPPORTED): a bigger swap in the evidence should cause a bigger shift in the prediction.
+
+--- Validity check: NonAugmentedHead must show ZERO shift ---
+  max |shift| across all perturbations, all queries: 0.00e+00
+  OK: baseline is provably blind to the evidence, exactly as it should be. This confirms any FusionHead shift above is coming from the retrieved evidence, not from some other source of nondeterminism in this harness.
+
+========================================================================
+REMINDERS: n=23 test queries -- read the CIs, not just
+the point estimates. Stub encoder + pragmatic stance label still apply
+(see train.py). Re-run once the real encoder and a confirmed stance
+definition are wired in.
+========================================================================

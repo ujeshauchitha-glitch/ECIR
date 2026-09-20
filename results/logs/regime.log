@@ -1,0 +1,78 @@
+========================================================================
+Regime-stratified robustness analysis -- REAL data. Same caveats
+as train.py/faithfulness.py, PLUS small per-regime n (post_hiking
+has very few events -- it's a regime that only started
+mid-2022). Read every CI.
+========================================================================
+
+Regime counts across all 273 real events: {'pre_zlb': 179, 'zlb': 67, 'post_hiking': 27}
+
+------------------------------------------------------------------------
+1. RETRIEVAL QUALITY BY REGIME (leave-one-out over all 273 events)
+------------------------------------------------------------------------
+mode          regime            n                ndcg@5               ndcg@10                   map
+---------------------------------------------------------------------------------------------------
+hybrid        pre_zlb         179  0.474 [0.412,0.540]  0.444 [0.383,0.506]  0.244 [0.210,0.278]
+hybrid        zlb              67  0.710 [0.610,0.803]  0.674 [0.575,0.772]  0.410 [0.346,0.478]
+hybrid        post_hiking      27  0.239 [0.116,0.371]  0.214 [0.100,0.338]  0.103 [0.050,0.166]
+market_only   pre_zlb         179  0.782 [0.721,0.844]  0.782 [0.721,0.844]  0.782 [0.721,0.844]
+market_only   zlb              67  0.866 [0.776,0.940]  0.866 [0.776,0.940]  0.866 [0.776,0.940]
+market_only   post_hiking      27  0.593 [0.407,0.778]  0.593 [0.407,0.778]  0.593 [0.407,0.778]
+bm25          pre_zlb         179  0.058 [0.042,0.075]  0.065 [0.051,0.080]  0.112 [0.096,0.127]
+bm25          zlb              67  0.132 [0.094,0.175]  0.146 [0.112,0.184]  0.201 [0.168,0.235]
+bm25          post_hiking      27  0.016 [0.000,0.042]  0.019 [0.005,0.037]  0.051 [0.025,0.081]
+
+Held-out (2020 onward) events by regime: zlb=20, post_hiking=27
+
+Training FusionHead and NonAugmentedHead (identical setup to train.py) ...
+    epoch   0  mean loss 0.7233  val MSE 0.3161
+    epoch  20  no validation improvement for 20 epochs -> stop
+    early stopping: kept epoch 0 (validation MSE 0.3161, n_val=45)
+    epoch   0  mean loss 0.7962  val MSE 0.2520
+    epoch  20  no validation improvement for 20 epochs -> stop
+    early stopping: kept epoch 0 (validation MSE 0.2520, n_val=45)
+
+------------------------------------------------------------------------
+2. DOWNSTREAM PREDICTION QUALITY BY REGIME
+------------------------------------------------------------------------
+
+  regime=zlb (n=20)
+    FusionHead:
+      dir. accuracy     0.550  [0.350, 0.751]
+      Spearman rho     -0.102  [-0.497, 0.293]
+      R^2              -0.162  [-0.821, 0.012]
+    NonAugmented:
+      dir. accuracy     0.500  [0.299, 0.700]
+      Spearman rho      0.009  [-0.522, 0.536]
+      R^2              -0.018  [-0.348, 0.004]
+
+  regime=post_hiking (n=27)
+    FusionHead:
+      dir. accuracy     0.593  [0.407, 0.778]
+      Spearman rho      0.150  [-0.264, 0.515]
+      R^2               0.033  [-0.207, 0.085]
+    NonAugmented:
+      dir. accuracy     0.481  [0.296, 0.667]
+      Spearman rho      0.223  [-0.189, 0.607]
+      R^2               0.001  [-0.197, 0.002]
+
+------------------------------------------------------------------------
+3. FAITHFULNESS BY REGIME (perturbation-magnitude vs shift correlation)
+------------------------------------------------------------------------
+
+  regime=zlb (n=40 perturbations): Spearman rho(perturbation magnitude, |shift|) = 0.594  [0.262, 0.812]
+
+  regime=post_hiking (n=54 perturbations): Spearman rho(perturbation magnitude, |shift|) = 0.427  [0.151, 0.635]
+
+------------------------------------------------------------------------
+4. PRECEDENT DENSITY: what regime do post_hiking queries actually
+   retrieve their evidence from? (the proposal's literal question)
+------------------------------------------------------------------------
+  Across 27 post_hiking queries, on average 59% of each query's top-5 retrieved precedents are ALSO post_hiking-regime events; the rest are drawn from earlier regimes (pre_zlb/zlb) because post_hiking is a brand-new regime with little same-regime history yet.
+
+========================================================================
+REMINDERS: stub encoder + pragmatic stance label still apply.
+post_hiking has only 27 real events in this dataset --
+every post_hiking number above is a small-n result. Report it as
+such, and revisit once more post-2022 ECB events are available.
+========================================================================

@@ -289,6 +289,8 @@ def main():
     print("\n" + "=" * 72)
     print("RESULTS")
     print("=" * 72)
+    results = {"n_events": len(events), "n_examples": len(examples), "n_train": len(train_ex),
+               "n_val": len(val_ex), "n_test": len(test_ex), "splits": {}}
     for split_name, split_ex in [("val", val_ex), ("test", test_ex)]:
         if not split_ex:
             print(f"\n{split_name}: empty, skipping.")
@@ -296,9 +298,14 @@ def main():
         y_true = [e["label"] for e in split_ex]
         print(f"\n--- {split_name} ---")
         y_pred_fusion = predict(fusion, split_ex, embed_dim, market_dim, K, True, label_mean, label_std)
-        evaluate("FusionHead (retrieval-augmented)", y_true, y_pred_fusion, len(split_ex))
         y_pred_base = predict(baseline, split_ex, embed_dim, market_dim, K, False, label_mean, label_std)
-        evaluate("NonAugmentedHead (baseline)", y_true, y_pred_base, len(split_ex))
+        results["splits"][split_name] = {
+            "fusion": evaluate("FusionHead (retrieval-augmented)", y_true, y_pred_fusion, len(split_ex)),
+            "baseline": evaluate("NonAugmentedHead (baseline)", y_true, y_pred_base, len(split_ex)),
+            "train_mean": evaluate("Reference: predict the training mean", y_true, [label_mean] * len(split_ex), len(split_ex)),
+        }
+    from pipeline import save_json
+    save_json("downstream_train_py.json", results)
 
     print("\n" + "=" * 72)
     print("REMINDERS (do not drop these when reporting the numbers above):")
