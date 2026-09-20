@@ -1,0 +1,14 @@
+273 events with statements.
+Part 1: retrieval-quality sweep (lambda x tau x kernel) ...
+Part 2: downstream ablations (multi-seed) ...
+[   110s] main (k=5, uncertainty on, ois_1y) seed=0 done
+[   225s] main (k=5, uncertainty on, ois_1y) seed=1 done
+[   347s] main (k=5, uncertainty on, ois_1y) seed=2 done
+[   449s] main (k=5, uncertainty on, ois_1y) seed=3 done
+[   546s] main (k=5, uncertainty on, ois_1y) seed=4 done
+C:\Users\ujesh\Documents\ECIR\ablations.py:118: RuntimeWarning: Mean of empty slice
+  agg[who] = {m: (float(np.nanmean([s[who][m] for s in per_seed])), float(np.nanstd([s[who][m] for s in per_seed])))
+C:\Users\ujesh\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\numpy\lib\_nanfunctions_impl.py:1997: RuntimeWarning: Degrees of freedom <= 0 for slice.
+  var = nanvar(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+[   632s] k=1 seed=0 done
+[   717s] k=1 seed=1 done

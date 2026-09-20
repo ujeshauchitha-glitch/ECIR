@@ -36,10 +36,13 @@ explain things in plain, non-jargon language.
 
 ## What was found / fixed on 2026-09-20 (Phase 0) — IMPORTANT
 - **Leak (fixed):** train.py / faithfulness.py originally retrieved precedents using the QUERY's own
-  market vector, which contains the stance label (1y OIS). Quantified: FusionHead held-out directional
-  accuracy 0.688 [0.531,0.844] with the leak vs 0.438 [0.250,0.595] without (n=32). All earlier
-  "retrieval helps" claims from before this fix are INVALID. `build_examples(..., leaky=True)` still
-  exists ONLY to reproduce the leaky number for comparison.
+  market vector, which contains the stance label (1y OIS). CORRECTION OF AN EARLIER CLAIM: on 2026-09-20 I first
+  quoted "0.688 leaky vs 0.438 fixed (n=32)". That was ONE seed on the older 228-event data and overstated the
+  effect. The proper measurement (leak_control.py, 3 seeds, 273 events, held-out n=47 x 3): leaky pooled directional
+  accuracy 0.525 [0.440, 0.610] vs fixed 0.489 [0.411, 0.574] -- overlapping CIs, i.e. small/noisy with the stub
+  encoder. The leak is still a methodological error (and could matter more with a real encoder); results from before
+  the fix are invalid as claims, but the size of the inflation was small. `build_examples(..., leaky=True)` exists
+  ONLY to reproduce the leaky number.
 - **Stub encoder was non-deterministic** (used salted builtin `hash()`); now `zlib.crc32`. Earlier
   run-to-run instability in faithfulness results was partly this.
 - **regime_robustness.py section 4** (precedent density) drew from all events incl. future ones; now

@@ -1,0 +1,36 @@
+========================================================================
+Precedent-RAG retrieval pipeline -- REAL DATA RUN
+Real ECB text + real EA-MPD market data. Encoder is STILL A STUB
+(see module docstring) -- only market_only and bm25 are fully real.
+========================================================================
+
+Real corpus: 3325 documents, 273 linked events (of the proposal's stated 315; events with no press-conference statement available are left out -- see data.py).
+ECB-Precedent (bottom-decile) on these 273 events: 7426 relevant pairs, distance threshold=3.3410
+
+Running leave-one-out retrieval over 273 query events x 5 modes ...
+Retrieval done in 47.8s.
+
+mode                              ndcg@5               ndcg@10                   map
+------------------------------------------------------------------------------------
+random              0.043 [0.033,0.055]  0.046 [0.037,0.055]  0.112 [0.099,0.125]
+bm25                0.072 [0.056,0.089]  0.081 [0.067,0.097]  0.127 [0.113,0.142]
+dense_text_only     0.060 [0.048,0.073]  0.071 [0.059,0.083]  0.126 [0.112,0.141]
+market_only         0.784 [0.733,0.828]  0.784 [0.733,0.828]  0.784 [0.733,0.828]
+hybrid              0.509 [0.457,0.566]  0.477 [0.428,0.533]  0.271 [0.242,0.302]
+
+Paired bootstrap significance vs. hybrid (nDCG@10), Holm-corrected:
+  hybrid_vs_random             p=0.0010  Holm-threshold=0.0125  significant=True
+  hybrid_vs_bm25               p=0.0010  Holm-threshold=0.0167  significant=True
+  hybrid_vs_dense_text_only    p=0.0010  Holm-threshold=0.0250  significant=True
+  hybrid_vs_market_only        p=0.0010  Holm-threshold=0.0500  significant=True
+
+========================================================================
+REMINDERS:
+1. n=273 events, not 315. Say so wherever these numbers are used.
+2. dense_text_only/hybrid use the STUB encoder -- re-run once the
+   real trained encoder is wired into similarity.py.
+3. market_only is expected to be near-ceiling by construction
+   (relevance labels ARE market-outcome distance). Not a bug.
+========================================================================
+
+Total runtime: 50.9s

@@ -1,0 +1,84 @@
+========================================================================
+Regime-stratified robustness analysis -- REAL data. Same caveats
+as train.py/faithfulness.py, PLUS small per-regime n (post_hiking
+has very few events -- it's a regime that only started
+mid-2022). Read every CI.
+========================================================================
+
+Regime counts across all 273 real events: {'pre_zlb': 179, 'zlb': 67, 'post_hiking': 27}
+
+------------------------------------------------------------------------
+1. RETRIEVAL QUALITY BY REGIME (leave-one-out over all 273 events)
+------------------------------------------------------------------------
+mode          regime            n                ndcg@5               ndcg@10                   map
+---------------------------------------------------------------------------------------------------
+hybrid        pre_zlb         179  0.474 [0.412,0.540]  0.444 [0.383,0.506]  0.244 [0.210,0.278]
+hybrid        zlb              67  0.710 [0.610,0.803]  0.674 [0.575,0.772]  0.410 [0.346,0.478]
+hybrid        post_hiking      27  0.239 [0.116,0.371]  0.214 [0.100,0.338]  0.103 [0.050,0.166]
+market_only   pre_zlb         179  0.782 [0.721,0.844]  0.782 [0.721,0.844]  0.782 [0.721,0.844]
+market_only   zlb              67  0.866 [0.776,0.940]  0.866 [0.776,0.940]  0.866 [0.776,0.940]
+market_only   post_hiking      27  0.593 [0.407,0.778]  0.593 [0.407,0.778]  0.593 [0.407,0.778]
+bm25          pre_zlb         179  0.058 [0.042,0.075]  0.065 [0.051,0.080]  0.112 [0.096,0.127]
+bm25          zlb              67  0.132 [0.094,0.175]  0.146 [0.112,0.184]  0.201 [0.168,0.235]
+bm25          post_hiking      27  0.016 [0.000,0.042]  0.019 [0.005,0.037]  0.051 [0.025,0.081]
+
+Held-out (2020 onward) events by regime: zlb=20, post_hiking=27
+
+Training FusionHead and NonAugmentedHead (identical setup to train.py) ...
+    epoch   0  mean NLL 0.5893
+    epoch  30  mean NLL 0.1539
+    epoch  60  mean NLL -0.0560
+    epoch  90  mean NLL 0.0484
+    epoch 120  mean NLL -0.0412
+    epoch 149  mean NLL -0.1734
+    epoch   0  mean NLL 0.6209
+    epoch  30  mean NLL 0.4109
+    epoch  60  mean NLL 0.3119
+    epoch  90  mean NLL 0.2713
+    epoch 120  mean NLL 0.1975
+    epoch 149  mean NLL 0.1533
+
+------------------------------------------------------------------------
+2. DOWNSTREAM PREDICTION QUALITY BY REGIME
+------------------------------------------------------------------------
+
+  regime=zlb (n=20)
+    FusionHead:
+      dir. accuracy     0.500  [0.300, 0.750]
+      Spearman rho      0.015  [-0.441, 0.443]
+      R^2              -0.878  [-4.172, -0.131]
+    NonAugmented:
+      dir. accuracy     0.550  [0.349, 0.750]
+      Spearman rho     -0.068  [-0.520, 0.500]
+      R^2              -0.103  [-1.040, 0.176]
+
+  regime=post_hiking (n=27)
+    FusionHead:
+      dir. accuracy     0.444  [0.259, 0.630]
+      Spearman rho     -0.101  [-0.423, 0.246]
+      R^2              -0.063  [-0.392, 0.003]
+    NonAugmented:
+      dir. accuracy     0.481  [0.296, 0.667]
+      Spearman rho     -0.529  [-0.736, -0.225]
+      R^2              -0.178  [-0.696, -0.070]
+
+------------------------------------------------------------------------
+3. FAITHFULNESS BY REGIME (perturbation-magnitude vs shift correlation)
+------------------------------------------------------------------------
+
+  regime=zlb (n=40 perturbations): Spearman rho(perturbation magnitude, |shift|) = 0.078  [-0.260, 0.393]
+
+  regime=post_hiking (n=54 perturbations): Spearman rho(perturbation magnitude, |shift|) = 0.042  [-0.244, 0.316]
+
+------------------------------------------------------------------------
+4. PRECEDENT DENSITY: what regime do post_hiking queries actually
+   retrieve their evidence from? (the proposal's literal question)
+------------------------------------------------------------------------
+  Across 27 post_hiking queries, on average 59% of each query's top-5 retrieved precedents are ALSO post_hiking-regime events; the rest are drawn from earlier regimes (pre_zlb/zlb) because post_hiking is a brand-new regime with little same-regime history yet.
+
+========================================================================
+REMINDERS: stub encoder + pragmatic stance label still apply.
+post_hiking has only 27 real events in this dataset --
+every post_hiking number above is a small-n result. Report it as
+such, and revisit once more post-2022 ECB events are available.
+========================================================================

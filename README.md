@@ -66,8 +66,9 @@ Set `OMP_NUM_THREADS=1` and run the long jobs in parallel — the networks are t
 ## Two design rules worth knowing before touching anything
 1. **Leakage boundary.** At prediction time the query's own market outcome doesn't exist, and the stance
    label is computed from it. So prediction-time retrieval is **text-only** (`m_q=None`) and only
-   **strictly earlier** events are retrievable. An earlier version retrieved with `m_q` and looked
-   ~25 points better in directional accuracy; that was the leak. `build_examples(leaky=True)` exists only
-   to reproduce it. Tests in `tests/test_leakage_and_model.py` pin this.
+   **strictly earlier** events are retrievable. An earlier version retrieved with `m_q` (invalid: it hands the model part of the
+   answer). `leak_control.py` measures how much that matters with the current encoder/data
+   (`results/leak_control.json`; the effect is small and within noise here, but the setup is invalid regardless, and a
+   real encoder could make it larger). `build_examples(leaky=True)` exists only to reproduce it. Tests in `tests/test_leakage_and_model.py` pin this.
 2. **The retrieval-quality benchmark is circular by construction** — relevance is defined by market-outcome
    distance, so `market_only` is near-ceiling. That is expected, not a bug; the write-up must say so.
