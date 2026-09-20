@@ -111,3 +111,23 @@ def test_rankings_are_permutations_of_candidates_for_every_mode():
     for mode in ("bm25", "dense_text_only", "market_only", "hybrid", "random"):
         r = rank_candidates(ev[0], ev[1:], mode, encoder=enc, doc_text_by_event=text, bm25=bm)
         assert sorted(r) == sorted(e.event_id for e in ev[1:]), mode
+
+
+def test_bm25_optimised_scoring_equals_naive_token_loop():
+    import math
+    docs = {"a": "inflation tighten inflation firm", "b": "easing support inflation patient patient", "c": "firm firm firm"}
+    bm = BM25(docs)
+
+    def naive(query, did):
+        tf, dl, s = bm.tf[did], bm.doc_len[did], 0.0
+        for term in query.lower().split():                  # the original per-token loop
+            if term not in tf:
+                continue
+            f = tf[term]
+            denom = f + bm.k1 * (1 - bm.b + bm.b * dl / bm.avgdl)
+            s += bm.idf.get(term, 0.0) * (f * (bm.k1 + 1)) / denom
+        return s
+
+    for q in ("inflation inflation firm patient", "support support support support", "", "unseen words only"):
+        for d in docs:
+            assert bm.score(q, d) == pytest.approx(naive(q, d))

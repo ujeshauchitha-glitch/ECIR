@@ -20,9 +20,8 @@ not a choice made for this project the way the stance label was.
 
 CORRECTION TO SOMETHING SAID EARLIER IN THIS PROJECT: train.py's val split
 (2020-2022 by calendar year) was described in conversation as "the ZLB
-era" -- that's only mostly true. Checked here: 15 of those 18 events are
-genuinely zlb-regime, but 3 (Sep/Oct/Dec 2022) are already post_hiking by
-the real date boundary above. This script uses the correct date-based
+era" -- that's only mostly true: a few of those events (Sep/Oct/Dec 2022)
+are already post_hiking by the real date boundary above. This script uses the correct date-based
 regime label throughout, not the calendar-year split.
 
 WHAT THIS RUNS, reusing the exact same trained model / retrieval / metrics
@@ -55,6 +54,7 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from baselines import BM25, rank_candidates
 from benchmark import build_ecb_precedent, relevance_lookup
@@ -66,7 +66,7 @@ from metrics import (
     r_squared, spearman_rho,
 )
 from similarity import make_stub_encoder
-from train import K, build_examples, predict, train_model
+from train import K, SEED, build_examples, predict, train_model
 
 DATA_DIR = Path(__file__).parent / "data"
 ZLB_START = dt.date(2014, 6, 1)
@@ -114,7 +114,7 @@ def main():
 
     # Only hybrid + market_only + bm25 -- skipping dense_text_only/random
     # here (already characterized in run_real.py) to keep this runtime
-    # reasonable; they'd cost the same 228x228 comparisons again for no
+    # reasonable; they'd cost the same all-pairs comparisons again for no
     # new information about regime robustness specifically.
     modes = ["hybrid", "market_only", "bm25"]
     rels_by_mode_regime: dict[str, dict[str, list[list[float]]]] = {
@@ -176,8 +176,10 @@ def main():
     embed_dim, market_dim = encoder.dim, len(events[0].market_vector)
 
     print("\nTraining FusionHead and NonAugmentedHead (identical setup to train.py) ...")
+    torch.manual_seed(SEED)  # init is drawn at construction: seed first (reproducibility)
     fusion = FusionHead(embed_dim=embed_dim, market_dim=market_dim)
     train_model(fusion, train_ex, embed_dim, market_dim, K, True, label_mean, label_std)
+    torch.manual_seed(SEED)
     baseline = NonAugmentedHead(embed_dim=embed_dim)
     train_model(baseline, train_ex, embed_dim, market_dim, K, False, label_mean, label_std)
 

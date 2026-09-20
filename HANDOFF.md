@@ -10,14 +10,14 @@ explain things in plain, non-jargon language.
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Fix retrieval leak in the prediction pipeline; fix non-deterministic stub encoder | DONE |
-| 1 | Data: fetch missing press-conference texts from ECB site; audit existing links | TODO |
-| 2 | Tests / stress tests (pytest) | TODO |
-| 3 | Ablations (lambda, k, uncertainty on/off, stance-definition sensitivity, multi-seed) | TODO |
-| 4 | Rolling-origin + leave-one-meeting-out CV | TODO |
-| 5 | Cleanup: README rewrite, move unrelated "Presample" files out of the repo | TODO |
-| 6 | Paper draft (numbers auto-filled from results/*.json only) | TODO |
-| 7 | Zip package | TODO |
+| 0 | Fix retrieval leak in the prediction pipeline; fix non-deterministic stub encoder | DONE (commit b7d3332) |
+| 1 | Data: official ECB press-conference statements fetched + validated (273/315 events, was 228); title-strict BIS fallback | DONE (commit 76cbef4) |
+| 2 | Tests (64, all passing) + bugs found by them fixed (p-value=0, Holm thresholds, hyperparameter validation) | DONE |
+| 3 | Ablations (lambda/tau/kernel, k, uncertainty, frozen attention, stance defs, controls, multi-seed) | code DONE; full run -> results/ablations_*.json (see logs/) |
+| 4 | Rolling-origin + leave-one-meeting-out CV | code DONE; full run -> results/cv_*.json |
+| 5 | README rewrite; unrelated "Presample" files moved to ../ECIR_unrelated_presample/ | DONE |
+| 6 | Paper draft (numbers auto-filled from results/*.json only) | see paper/ |
+| 7 | Zip package | see bottom of this file |
 
 ## Things only the owner / teammate can unblock (cannot be done from code)
 1. **Real trained encoder** (teammate's, from the concurrent submission). Everything that depends on
@@ -54,6 +54,26 @@ explain things in plain, non-jargon language.
   by regime zlb 0.54 [0.19,0.79], post_hiking 0.37 [0.03,0.64].
 - Retrieval-QUALITY benchmark (symmetric, uses m_q legitimately as train-time regime): market_only is
   near-ceiling by construction (labels are defined by market distance) — must be framed that way.
+
+## Additional findings on 2026-09-20 (Phases 1-2)
+- **Data bug caught before it bit:** first version of fetch_ecb_pressconf.py parsed the ECB index with one greedy
+  regex; when an entry lacked a link it borrowed the NEXT entry's page (one date got the previous meeting's
+  statement, another a podcast page). Rewritten to parse per-entry, accept only genuine statement URLs, and
+  REJECT any page whose printed date (or URL date code) doesn't match the event. One ECB page (2006-06-08) prints
+  the wrong date but its URL is right; accepted with a note.
+- 273 of 315 EA-MPD dates have a statement on the ECB site. The other 42 (1999-2001 mostly, plus 2002-08-01,
+  2003-07-31, 2004-08-05, 2005-08-04, 2008-10-08) have none listed -- consistent with meetings that produced only a
+  press release (not independently verified beyond the ECB's index). They are LEFT OUT, never approximated.
+  The BIS strict-title fallback rescued 0 of them.
+- Old BIS loose fallback had linked 3 events to unrelated speeches (e.g. "The EURO. OUR money"); that path is gone.
+- **Kernel discrepancy:** proposal PDF (Sec 4, p.4) shows exp(-||m_q-m_i||_2/tau) (plain L2); the code and the
+  owner's brief use the squared distance. `hybrid_similarity(..., squared=True|False)`; default unchanged. UNRESOLVED.
+- **tau scale problem:** distances are in basis points (median squared distance ~90), so the historical default
+  tau=1 makes the market term ~0 for almost every pair; hybrid at tau=1 is badly handicapped. ablations.py sweeps tau
+  as multiples of the median distance.
+- Baseline code re-embedded every candidate on every comparison; with ~6,000-word statements run_real.py became
+  hours-long. FrozenEncoder.embed now memoizes (value-preserving).
+- `results/logs/` has raw logs; `results/*.json` has every number the paper tables are generated from.
 
 ## Data (not in git)
 `data/` (local only): `all_ECB_speeches (1).csv` (3,052 ECB speeches, pipe-delimited),

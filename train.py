@@ -181,7 +181,7 @@ def evaluate(name, y_true, y_pred, n):
         ("spearman", "Spearman rho", spearman_rho),
         ("r2", "R^2", r_squared),
     ]:
-        if key == "spearman" and np.std(y_pred) == 0:
+        if key == "spearman" and np.ptp(np.asarray(y_pred, float)) < 1e-9:
             print(f"    {metric_name:<22}     n/a  (constant predictor)")
             rec[key] = None
             continue
@@ -225,10 +225,12 @@ def main():
     embed_dim, market_dim = encoder.dim, len(events[0].market_vector)
 
     print("\nTraining FusionHead (retrieval-augmented) ...")
+    torch.manual_seed(SEED)  # init is drawn at construction: seed first (reproducibility)
     fusion = FusionHead(embed_dim=embed_dim, market_dim=market_dim)
     train_model(fusion, train_ex, embed_dim, market_dim, K, True, label_mean, label_std)
 
     print("\nTraining NonAugmentedHead (baseline, no retrieval) ...")
+    torch.manual_seed(SEED)
     baseline = NonAugmentedHead(embed_dim=embed_dim)
     train_model(baseline, train_ex, embed_dim, market_dim, K, False, label_mean, label_std)
 

@@ -23,6 +23,7 @@ from similarity import FrozenEncoder, cosine_sim, hybrid_similarity
 class BM25:
     def __init__(self, docs: dict[str, str], k1: float = 1.5, b: float = 0.75):
         self.k1, self.b = k1, b
+        self._qcache: dict = {}
         self.doc_ids = list(docs.keys())
         self.tokenized = {did: docs[did].lower().split() for did in self.doc_ids}
         self.doc_len = {did: len(toks) for did, toks in self.tokenized.items()}
@@ -40,18 +41,27 @@ class BM25:
             term: math.log(1 + (n - dfi + 0.5) / (dfi + 0.5)) for term, dfi in df.items()
         }
 
+    def _query_counts(self, query: str) -> dict:
+        qc = self._qcache.get(query)
+        if qc is None:
+            qc = collections.Counter(query.lower().split())
+            self._qcache[query] = qc
+        return qc
+
     def score(self, query: str, doc_id: str) -> float:
-        q_terms = query.lower().split()
+        """Standard BM25. Repeated query terms contribute once per occurrence, computed here as
+        (occurrences x term score) over UNIQUE terms -- identical to looping over every token, but
+        ~5x faster for long queries (tests/test_benchmark_baselines.py checks equivalence)."""
         tf = self.tf[doc_id]
         dl = self.doc_len[doc_id]
         s = 0.0
-        for term in q_terms:
+        for term, qf in self._query_counts(query).items():
             if term not in tf:
                 continue
             idf = self.idf.get(term, 0.0)
             f = tf[term]
             denom = f + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
-            s += idf * (f * (self.k1 + 1)) / denom if denom > 0 else 0.0
+            s += qf * (idf * (f * (self.k1 + 1)) / denom if denom > 0 else 0.0)
         return s
 
 

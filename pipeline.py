@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import torch
 
 import train
 from data import MARKET_VECTOR_COLUMNS, load_real_corpus, stance_label
@@ -83,9 +84,11 @@ def fit_predict(train_ex, test_ex, cfg: Cfg, embed_dim: int, market_dim: int):
         train_ex = [dict(e, label=train_ex[j]["label"]) for e, j in zip(train_ex, perm)]
     labels = np.array([e["label"] for e in train_ex])
     mu, sd = float(labels.mean()), float(labels.std() + 1e-8)
+    torch.manual_seed(cfg.seed)   # weights are drawn at construction, so seed BEFORE building the model
     fusion = FusionHead(embed_dim, market_dim)
     train.train_model(fusion, train_ex, embed_dim, market_dim, cfg.k, True, mu, sd, epochs=cfg.epochs, lr=cfg.lr,
                       seed=cfg.seed, use_uncertainty=cfg.uncertainty, freeze_attention=cfg.freeze_attention, verbose=False)
+    torch.manual_seed(cfg.seed)
     base = NonAugmentedHead(embed_dim)
     train.train_model(base, train_ex, embed_dim, market_dim, cfg.k, False, mu, sd, epochs=cfg.epochs, lr=cfg.lr,
                       seed=cfg.seed, use_uncertainty=cfg.uncertainty, verbose=False)
@@ -101,7 +104,7 @@ def fit_predict(train_ex, test_ex, cfg: Cfg, embed_dim: int, market_dim: int):
 def score(y_true, y_pred) -> dict:
     return {
         "dir_acc": directional_accuracy(y_true, y_pred),
-        "spearman": spearman_rho(y_true, y_pred) if np.std(y_pred) > 0 else float("nan"),
+        "spearman": spearman_rho(y_true, y_pred) if np.ptp(np.asarray(y_pred, float)) > 1e-9 else float("nan"),
         "r2": r_squared(y_true, y_pred),
     }
 

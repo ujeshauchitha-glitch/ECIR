@@ -159,8 +159,10 @@ def main():
     embed_dim, market_dim = encoder.dim, len(events[0].market_vector)
 
     print("\nTraining FusionHead and NonAugmentedHead (same setup as train.py) ...")
+    torch.manual_seed(SEED)  # init is drawn at construction: seed first (reproducibility)
     fusion = FusionHead(embed_dim=embed_dim, market_dim=market_dim)
     train_model(fusion, train_ex, embed_dim, market_dim, K, True, label_mean, label_std)
+    torch.manual_seed(SEED)
     baseline = NonAugmentedHead(embed_dim=embed_dim)
     train_model(baseline, train_ex, embed_dim, market_dim, K, False, label_mean, label_std)
 

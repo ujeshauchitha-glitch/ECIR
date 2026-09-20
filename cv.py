@@ -51,7 +51,7 @@ def pooled_report(y, preds: dict, regimes: list[str]) -> dict:
             yt, yp = np.asarray(y)[mask], p[mask]
             rec = {"n": int(mask.sum())}
             for mname, fn in (("dir_acc", directional_accuracy), ("spearman", spearman_rho), ("r2", r_squared)):
-                if mname == "spearman" and np.std(yp) == 0:
+                if mname == "spearman" and np.ptp(yp) < 1e-9:
                     rec[mname] = None
                     continue
                 pt, lo, hi = bootstrap_metric_ci(yt, yp, fn)

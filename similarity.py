@@ -39,10 +39,18 @@ class FrozenEncoder:
     def __init__(self, embed_fn: Callable[[str], np.ndarray], dim: int):
         self._embed_fn = embed_fn
         self.dim = dim
+        # A frozen encoder is a pure function of the text, so memoizing is value-preserving.
+        # Without this the baselines re-embedded every candidate document on every comparison
+        # (O(events^2) embeddings of ~6,000-word statements), which made run_real.py take hours.
+        self._cache: dict[str, np.ndarray] = {}
 
     def embed(self, text: str) -> np.ndarray:
-        v = self._embed_fn(text)
-        assert v.shape == (self.dim,), f"expected shape ({self.dim},), got {v.shape}"
+        v = self._cache.get(text)
+        if v is None:
+            v = self._embed_fn(text)
+            assert v.shape == (self.dim,), f"expected shape ({self.dim},), got {v.shape}"
+            v.setflags(write=False)  # shared across callers: make accidental mutation an error
+            self._cache[text] = v
         return v
 
 
