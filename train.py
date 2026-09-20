@@ -15,7 +15,8 @@ has a stance definition yet. It is not from the proposal. Write it up in
 the paper as an explicit, justified modeling decision, not as settled fact.
 
 HOW REAL THIS RUN IS:
-  - Corpus, market data, event linking: REAL (228/315 events -- see data.py).
+  - Corpus, market data, event linking: REAL (events = EA-MPD dates that have a
+    press-conference statement; count printed at run time -- see data.py).
   - Stance label: REAL market data, but an unvalidated proxy definition
     (see above) -- not confirmed against any ground truth.
   - Encoder: STILL THE STUB (similarity.py::make_stub_encoder). Text
@@ -23,9 +24,9 @@ HOW REAL THIS RUN IS:
     fusion head's text pathway (e_q) is working with noise -- ONLY the
     retrieved market vectors carry real signal right now. Re-run this
     exact script once the real trained encoder is wired in.
-  - n is small: 196 train / 18 val / 14 test, out of the 228 real events.
-    Confidence intervals on val/test metrics will be WIDE. That is the
-    honest consequence of n=14-18, not a bug -- do not read a single point
+  - n is small (train/val/test sizes printed at run time; val and test are a
+    few dozen events at most). Confidence intervals on val/test metrics will be WIDE. That is the
+    honest consequence of the small n, not a bug -- do not read a single point
     estimate from this run as a stable result.
 
 RETRIEVAL LEAKAGE BOUNDARY, enforced here (not needed in run_demo.py/
@@ -57,7 +58,7 @@ LR = 1e-3
 SEED = 0
 
 
-def build_examples(events, encoder, embeddings, k=K, lam=LAM, tau=TAU, leaky=False):
+def build_examples(events, encoder, embeddings, k=K, lam=LAM, tau=TAU, leaky=False, label_fn=None):
     """For each event (in date order), retrieves up to k STRICTLY EARLIER
     events. Returns a list of dicts; events with zero available history are
     skipped (there is nothing to retrieve).
@@ -93,7 +94,8 @@ def build_examples(events, encoder, embeddings, k=K, lam=LAM, tau=TAU, leaky=Fal
             "e_q": embeddings[q.event_id],
             "retrieved_m": np.stack([c.market_vector for _, c in top]),
             "sim_scores": np.array([s for s, _ in top], dtype=np.float32),
-            "label": stance_label(q.market_vector),
+            "retrieved_ids": [c.event_id for _, c in top],
+            "label": (label_fn or stance_label)(q.market_vector),
         })
     return examples
 
@@ -121,9 +123,19 @@ def gaussian_nll(s_hat, sigma_hat, target):
     return 0.5 * (((target - s_hat) / sigma_hat) ** 2 + 2 * torch.log(sigma_hat))
 
 
-def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean, label_std, epochs=EPOCHS, lr=LR, seed=SEED):
+def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean, label_std, epochs=EPOCHS, lr=LR, seed=SEED,
+                use_uncertainty=True, freeze_attention=False, verbose=True):
+    """use_uncertainty=False trains s_hat alone with squared error (the proposal's
+    'absence of the uncertainty output' ablation). freeze_attention=True freezes the
+    cross-attention projections at their random init and trains only the regression
+    head (one reading of the proposal's 'frozen versus fine-tuned fusion' ablation --
+    encoder fine-tuning itself is not possible with the stub encoder)."""
     torch.manual_seed(seed)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    if freeze_attention and is_fusion:
+        for name in ("query_proj", "key_proj", "value_proj"):
+            for prm in getattr(model, name).parameters():
+                prm.requires_grad_(False)
+    opt = torch.optim.Adam([prm for prm in model.parameters() if prm.requires_grad], lr=lr)
     for epoch in range(epochs):
         total_loss = 0.0
         order = np.random.default_rng(seed + epoch).permutation(len(examples))
@@ -136,12 +148,13 @@ def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean
             else:
                 e_q = torch.tensor(ex["e_q"], dtype=torch.float32).unsqueeze(0)
                 out = model(e_q)
-            loss = gaussian_nll(out.s_hat, out.sigma_hat, target).mean()
+            loss = (gaussian_nll(out.s_hat, out.sigma_hat, target) if use_uncertainty
+                    else (out.s_hat - target) ** 2).mean()
             opt.zero_grad()
             loss.backward()
             opt.step()
             total_loss += float(loss.item())
-        if epoch % 30 == 0 or epoch == epochs - 1:
+        if verbose and (epoch % 30 == 0 or epoch == epochs - 1):
             print(f"    epoch {epoch:3d}  mean NLL {total_loss / len(examples):.4f}")
     return model
 
@@ -162,13 +175,20 @@ def predict(model, examples, embed_dim, market_dim, k, is_fusion, label_mean, la
 
 def evaluate(name, y_true, y_pred, n):
     print(f"  {name} (n={n}):")
-    for metric_name, fn in [
-        ("directional accuracy", directional_accuracy),
-        ("Spearman rho", spearman_rho),
-        ("R^2", r_squared),
+    rec = {"n": n}
+    for key, metric_name, fn in [
+        ("dir_acc", "directional accuracy", directional_accuracy),
+        ("spearman", "Spearman rho", spearman_rho),
+        ("r2", "R^2", r_squared),
     ]:
+        if key == "spearman" and np.std(y_pred) == 0:
+            print(f"    {metric_name:<22}     n/a  (constant predictor)")
+            rec[key] = None
+            continue
         point, lo, hi = bootstrap_metric_ci(y_true, y_pred, fn)
         print(f"    {metric_name:<22} {point:>7.3f}  [{lo:.3f}, {hi:.3f}]")
+        rec[key] = [point, lo, hi]
+    return rec
 
 
 def main():
@@ -231,7 +251,7 @@ def main():
     print("1. Stance label = 1yr OIS change, a pragmatic proxy chosen today,")
     print("   not a validated construct. Frame it as a modeling choice.")
     print("2. Encoder is the stub -- text signal is noise. Re-run once real.")
-    print("3. val n=18, test n=14. CIs are wide because n is small -- that")
+    print(f"3. val n={len(val_ex)}, test n={len(test_ex)}. CIs are wide because n is small -- that")
     print("   is correct behavior, not something to explain away.")
     print("=" * 72)
 

@@ -51,6 +51,9 @@ class Event:
 class Corpus:
     documents: list[Document]
     events: list[Event]  # subset linked to E, |E| should match len(events)
+    # doc_id -> where an event's text came from ("ecb_website" / "bis_archive");
+    # empty for corpora that don't track it (synthetic, speeches-only).
+    provenance: dict = dataclasses.field(default_factory=dict)
 
     def doc_by_id(self, doc_id: str) -> Document:
         for d in self.documents:
@@ -286,35 +289,30 @@ def load_market_vectors(xlsx_path: str | Path) -> dict[dt.date, np.ndarray]:
     return out
 
 
-def load_real_corpus(
-    ecb_csv_path: str | Path,
-    bis_csv_path: str | Path,
-    market_xlsx_path: str | Path,
-) -> Corpus:
-    """Assembles the REAL corpus: real ECB speeches (D), real press-conference
-    statements pulled from the BIS archive to fill the gap load_ecb_corpus
-    can't (see _ECB_PRESIDENTS note above), and real market-reaction vectors
-    from EA-MPD (see load_market_vectors).
+# Titles that identify a Governing Council press-conference statement inside the
+# BIS archive. Deliberately STRICT: an earlier version fell back to "any speech
+# by an ECB president that day", which linked 3 events to unrelated speeches.
+_PC_TITLE_MARKERS = (
+    "press conference", "introductory statement", "press briefing",
+    "outcome of the latest meeting", "report on the latest meeting", "reports on the latest meeting",
+)
 
-    Only 228 of the 315 EA-MPD events have a press-conference statement
-    findable in either provided file (checked +/- 3 days around each of the
-    other 87 dates too -- genuinely not there, not a matching bug). Those
-    228 are real, not approximated. The other 87 are simply absent from
-    this Corpus's `events` list -- NOT filled with a nearby unrelated
-    speech, which would silently corrupt the market-outcome labels.
-    `len(corpus.events)` is the honest number to report, not 315.
-    """
+
+def _bis_press_conference_rows(bis_csv_path, event_dates: set, cache_path) -> dict:
+    """{date: row} of BIS-archive rows authored by an ECB President on an event
+    date whose title matches _PC_TITLE_MARKERS. The 390MB scan is cached."""
+    import json
+
+    key = sorted(d.isoformat() for d in event_dates)
+    if cache_path is not None and Path(cache_path).exists():
+        cached = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        if cached.get("dates") == key:
+            return {dt.date.fromisoformat(k): v for k, v in cached["rows"].items()}
+
     csv.field_size_limit(sys.maxsize)
-
-    corpus = load_ecb_corpus(ecb_csv_path)
-    documents = list(corpus.documents)
-    market_vectors = load_market_vectors(market_xlsx_path)
-    event_dates = set(market_vectors)
-
-    candidates_by_date: dict[dt.date, list[dict]] = {}
+    rows: dict[dt.date, dict] = {}
     with open(bis_csv_path, encoding="utf-8", errors="replace", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+        for row in csv.DictReader(f):
             raw_date = (row.get("date") or "").strip()
             if not raw_date:
                 continue
@@ -322,39 +320,74 @@ def load_real_corpus(
                 date = dt.datetime.fromisoformat(raw_date).date()
             except ValueError:
                 continue
-            if date not in event_dates:
+            if date not in event_dates or date in rows:
                 continue
-            author = (row.get("author") or "").lower()
-            if any(p in author for p in _ECB_PRESIDENTS):
-                candidates_by_date.setdefault(date, []).append(row)
+            title = (row.get("title") or "").lower()
+            if any(p in (row.get("author") or "").lower() for p in _ECB_PRESIDENTS) and any(
+                m in title for m in _PC_TITLE_MARKERS
+            ):
+                rows[date] = {k: row.get(k, "") for k in ("title", "description", "text", "author")}
+    if cache_path is not None:
+        Path(cache_path).write_text(
+            json.dumps({"dates": key, "rows": {d.isoformat(): v for d, v in rows.items()}}), encoding="utf-8"
+        )
+    return rows
+
+
+def load_real_corpus(
+    ecb_csv_path: str | Path,
+    bis_csv_path: str | Path | None,
+    market_xlsx_path: str | Path,
+    pressconf_dir: str | Path | None = None,
+) -> Corpus:
+    """Assembles the REAL corpus: real ECB speeches (D), each EA-MPD event's
+    press-conference statement, and real market-reaction vectors (EA-MPD).
+
+    Statement text sources, in priority order:
+      1. `pressconf_dir` (default <data>/ecb_pressconf): the ECB's own
+         published statement, fetched by fetch_ecb_pressconf.py (validated:
+         the date printed on the page must equal the event date).
+      2. The BIS archive (bis_csv_path), strict title match only. Skipped if
+         bis_csv_path is None.
+    Events with no statement from either source (e.g. early-years meetings
+    that produced only a press release -- the ECB held press conferences
+    after only one meeting a month before late 2001) are left OUT of
+    `events`, never linked to a nearby unrelated document.
+    `corpus.provenance` records the source of each event document.
+    """
+    corpus = load_ecb_corpus(ecb_csv_path)
+    documents = list(corpus.documents)
+    market_vectors = load_market_vectors(market_xlsx_path)
+    event_dates = set(market_vectors)
+
+    if pressconf_dir is None:
+        pressconf_dir = Path(market_xlsx_path).parent / "ecb_pressconf"
+    pressconf_dir = Path(pressconf_dir)
+
+    texts: dict[dt.date, tuple[str, str]] = {}  # date -> (text, source)
+    if pressconf_dir.exists():
+        for d in sorted(event_dates):
+            f = pressconf_dir / f"{d.isoformat()}.txt"
+            if f.exists():
+                body = f.read_text(encoding="utf-8").split("\n\n", 1)
+                text = body[1].strip() if len(body) == 2 else ""
+                if len(text) > 500:
+                    texts[d] = (text, "ecb_website")
+
+    remaining = event_dates - set(texts)
+    if remaining and bis_csv_path is not None:
+        cache = Path(bis_csv_path).parent / "bis_pressconf_cache.json"
+        for d, row in _bis_press_conference_rows(bis_csv_path, remaining, cache).items():
+            text = " ".join(p for p in (row["title"], row["description"], row["text"]) if p).strip()
+            if len(text) > 500:
+                texts[d] = (text, "bis_archive")
 
     events: list[Event] = []
-    for i, date in enumerate(sorted(event_dates)):
-        cands = candidates_by_date.get(date)
-        if not cands:
-            continue
-        # Prefer the row actually titled as the press conference statement
-        # over another speech the same president happened to give that day.
-        preferred = [
-            c for c in cands
-            if "press conference" in (c.get("title") or "").lower()
-            or "introductory statement" in (c.get("title") or "").lower()
-        ]
-        row = preferred[0] if preferred else cands[0]
-
-        doc_id = f"bis_pc_{i:04d}"
-        text = " ".join(
-            p for p in (row.get("title", ""), row.get("description", ""), row.get("text", ""))
-            if p
-        ).strip()
-        documents.append(Document(doc_id=doc_id, date=date, text=text, event_id=f"evt_{i:04d}"))
-        events.append(
-            Event(
-                event_id=f"evt_{i:04d}",
-                doc_id=doc_id,
-                date=date,
-                market_vector=market_vectors[date],
-            )
-        )
-
-    return Corpus(documents=documents, events=events)
+    provenance: dict[str, str] = {}
+    for date in sorted(texts):
+        text, source = texts[date]
+        doc_id, event_id = f"pc_{date.isoformat()}", f"evt_{date.isoformat()}"
+        documents.append(Document(doc_id=doc_id, date=date, text=text, event_id=event_id))
+        events.append(Event(event_id=event_id, doc_id=doc_id, date=date, market_vector=market_vectors[date]))
+        provenance[doc_id] = source
+    return Corpus(documents=documents, events=events, provenance=provenance)

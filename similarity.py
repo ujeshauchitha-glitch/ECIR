@@ -96,15 +96,31 @@ def hybrid_similarity(
     m_q: Optional[np.ndarray],
     lam: float,
     tau: float,
+    squared: bool = True,
 ) -> SimilarityResult:
     """sim(q, d_i) per Sec 4. If m_q is None (genuine out-of-sample
     prediction time), falls back to text-only similarity and reports that
     explicitly via `mode` rather than silently mixing in a market term that
     doesn't exist yet.
+
+    UNRESOLVED DISCREPANCY (flagged 2026-09-20): the proposal PDF (Sec 4,
+    rendered page 4) shows the market term as exp(-||m_q - m_i||_2 / tau) --
+    the L2 norm, NOT squared -- whereas this project's code and the formula
+    quoted in the owner's original brief use the SQUARED distance,
+    exp(-||m_q - m_i||^2 / tau). Default (squared=True) keeps what was
+    built and run so far; squared=False gives the PDF's reading. The two
+    are different kernels (for tau=1 they differ a lot), so confirm which
+    one Sec 4 intends before any number is reported. See ablations.py for
+    the sensitivity of the results to this choice.
     """
+    if not 0.0 <= lam <= 1.0:
+        raise ValueError(f"lam must be in [0, 1], got {lam}")
+    if tau <= 0:
+        raise ValueError(f"tau must be > 0, got {tau}")
     text_term = cosine_sim(e_q, e_i)
     if m_q is None:
         return SimilarityResult(score=text_term, mode="text_only_fallback")
-    market_term = float(np.exp(-np.sum((m_q - m_i) ** 2) / tau))
+    sq = float(np.sum((m_q - m_i) ** 2))
+    market_term = float(np.exp(-(sq if squared else np.sqrt(sq)) / tau))
     score = lam * text_term + (1 - lam) * market_term
     return SimilarityResult(score=score, mode="hybrid")

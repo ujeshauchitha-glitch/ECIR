@@ -93,8 +93,11 @@ def paired_bootstrap_pvalue(
     for i in range(n_resamples):
         idx = rng.integers(0, n, size=n)
         resampled_means[i] = centered[idx].mean()
-    p = float(np.mean(np.abs(resampled_means) >= np.abs(observed)))
-    return p
+    # +1 correction: a Monte-Carlo p-value can never be exactly 0 (the observed
+    # statistic is itself one possible resample). Smallest reportable value is
+    # therefore 1/(n_resamples+1), not 0.
+    exceed = int(np.sum(np.abs(resampled_means) >= np.abs(observed)))
+    return float((exceed + 1) / (n_resamples + 1))
 
 
 def directional_accuracy(y_true: list[float], y_pred: list[float]) -> float:
@@ -149,18 +152,20 @@ def bootstrap_metric_ci(
 
 
 def holm_correction(pvalues: dict[str, float], alpha: float = 0.05) -> dict[str, tuple[float, bool]]:
-    """Holm-Bonferroni step-down correction. Returns {name: (adjusted_alpha_threshold, significant)}."""
+    """Holm-Bonferroni step-down correction.
+    Returns {name: (threshold_for_that_rank, significant)}, where the k-th
+    smallest p-value (k=0..m-1) is compared to alpha/(m-k). Once one comparison
+    fails, it and every larger p-value are declared non-significant (each still
+    reports its OWN rank's threshold).
+    """
     items = sorted(pvalues.items(), key=lambda kv: kv[1])
     m = len(items)
     result: dict[str, tuple[float, bool]] = {}
+    still_rejecting = True
     for rank, (name, p) in enumerate(items):
         threshold = alpha / (m - rank)
-        significant = p < threshold
-        result[name] = (threshold, significant)
+        significant = still_rejecting and p < threshold
         if not significant:
-            # Holm's step-down: once one comparison fails, all subsequent
-            # (larger p-value) comparisons are also declared non-significant.
-            for name2, p2 in items[rank + 1:]:
-                result[name2] = (alpha / (m - (rank + 1)), False)
-            break
+            still_rejecting = False
+        result[name] = (threshold, significant)
     return result

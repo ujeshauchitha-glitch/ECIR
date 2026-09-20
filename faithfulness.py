@@ -13,8 +13,8 @@ Causal faithfulness protocol (proposal Sec 5 "Faithfulness protocol" + Sec 6
     the resulting prediction shift, computed across the full test set.
 
 WHAT THIS RUNS: trains FusionHead + NonAugmentedHead exactly as train.py
-does (same data, split, hyperparameters), then on the TEST split (n=14 --
-small, see train.py's caveats, which all still apply here) runs four
+does (same data, split, hyperparameters), then on the TEST split (a few
+dozen events at most -- small, see train.py's caveats, which all still apply here) runs four
 perturbations of each query's retrieved evidence and measures the shift in
 the prediction:
 
@@ -101,7 +101,7 @@ def baseline_predict(model, e_q):
 
 def run_perturbations(model, e_q, ranked, k, rng, predict_fn=fusion_predict):
     """ranked: full history for this query, best-first (len > k+1 assumed --
-    true for every test-split event given train has 195 events). Returns
+    true for every test-split event given the size of the training history). Returns
     dict of condition -> (prediction, perturbation_magnitude or None).
     perturbation_magnitude is the market-vector distance between the
     removed rank-1 item and its replacement, where that's well-defined
@@ -190,10 +190,13 @@ def main():
     shift_bottom1 = [abs(to_raw(r["ablate_bottom1"][0]) - to_raw(r["original"][0])) for r in rows_fusion]
     m1, lo1, hi1 = bootstrap_ci(shift_top1)
     m2, lo2, hi2 = bootstrap_ci(shift_bottom1)
+    out_json = {"n_queries": len(rows_fusion),
+                "rank_test": {"shift_rank1": [m1, lo1, hi1], f"shift_rank{K}": [m2, lo2, hi2]}}
     print(f"  |shift| removing rank-1 (most relevant):  {m1:.4f}  [{lo1:.4f}, {hi1:.4f}]")
     print(f"  |shift| removing rank-{K} (least relevant): {m2:.4f}  [{lo2:.4f}, {hi2:.4f}]")
     p = paired_bootstrap_pvalue(shift_top1, shift_bottom1)
     print(f"  paired bootstrap p-value (rank-1 shift vs rank-{K} shift): {p:.4f}")
+    out_json["rank_test"]["p"] = p
     if m1 > m2 and p < 0.05:
         verdict = "SUPPORTED"
     elif m1 <= m2 and p < 0.05:
@@ -211,6 +214,7 @@ def main():
             mags.append(mag)
             shifts.append(abs(to_raw(pred) - to_raw(r["original"][0])))
     rho, lo, hi = bootstrap_metric_ci(mags, shifts, lambda a, b: spearman_rho(a, b))
+    out_json["magnitude_test"] = {"rho": [rho, lo, hi], "n_perturbations": len(mags)}
     print(f"  Spearman rho(perturbation magnitude, |prediction shift|): "
           f"{rho:.3f}  [{lo:.3f}, {hi:.3f}]  (n={len(mags)} perturbations, "
           f"{len(rows_fusion)} queries x 2 replace-conditions)")
@@ -230,6 +234,9 @@ def main():
         for cond in ("ablate_top1", "ablate_bottom1", "replace_with_next", "replace_with_random")
     )
     print(f"  max |shift| across all perturbations, all queries: {max_baseline_shift:.2e}")
+    out_json["baseline_max_shift"] = float(max_baseline_shift)
+    from pipeline import save_json
+    save_json("faithfulness.json", out_json)
     assert max_baseline_shift < 1e-6, (
         "NonAugmentedHead shifted when its retrieved evidence changed, but it never "
         "sees that evidence -- the harness itself has a bug, fix before trusting anything above."

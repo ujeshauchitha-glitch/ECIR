@@ -27,7 +27,7 @@ regime label throughout, not the calendar-year split.
 
 WHAT THIS RUNS, reusing the exact same trained model / retrieval / metrics
 code as train.py and faithfulness.py (no separate retraining logic):
-  1. Retrieval quality (nDCG@5/10, MAP), leave-one-out over ALL 228 real
+  1. Retrieval quality (nDCG@5/10, MAP), leave-one-out over ALL real
      events, grouped by which regime the QUERY falls in. This does not
      depend on the train/val/test split.
   2. Downstream prediction quality (directional accuracy, Spearman rho,
@@ -44,7 +44,7 @@ code as train.py and faithfulness.py (no separate retraining logic):
 
 Same caveats as train.py/faithfulness.py apply throughout: stub encoder,
 pragmatic stance label, and here ADDITIONALLY small per-regime n
-(post_hiking has only 17 events total, ever, in this dataset -- it is a
+(post_hiking has very few events in this dataset -- it is a
 regime that only started in mid-2022). Read every CI, not just the point
 estimates.
 """
@@ -85,7 +85,7 @@ def main():
     print("=" * 72)
     print("Regime-stratified robustness analysis -- REAL data. Same caveats")
     print("as train.py/faithfulness.py, PLUS small per-regime n (post_hiking")
-    print("has only 17 real events total -- it's a regime that only started")
+    print("has very few events -- it's a regime that only started")
     print("mid-2022). Read every CI.")
     print("=" * 72)
 
@@ -100,13 +100,13 @@ def main():
     embeddings = {eid: encoder.embed(text) for eid, text in doc_text.items()}
 
     counts = Counter(regime(e.date) for e in events)
-    print(f"\nRegime counts across all 228 real events: {dict(counts)}")
+    print(f"\nRegime counts across all {len(events)} real events: {dict(counts)}")
 
     # ------------------------------------------------------------------
     # 1. Retrieval quality, stratified by query regime
     # ------------------------------------------------------------------
     print("\n" + "-" * 72)
-    print("1. RETRIEVAL QUALITY BY REGIME (leave-one-out over all 228 events)")
+    print(f"1. RETRIEVAL QUALITY BY REGIME (leave-one-out over all {len(events)} events)")
     print("-" * 72)
     pairs, threshold = build_ecb_precedent(events)
     rel_lookup = relevance_lookup(pairs)
@@ -131,6 +131,7 @@ def main():
             rels = [rel_lookup.get((q.event_id, cid), 0.0) for cid in ranked_ids]
             rels_by_mode_regime[mode][q_regime].append(rels)
 
+    out_json = {"regime_counts": dict(counts), "retrieval": [], "downstream": {}, "faithfulness": {}}
     header = f"{'mode':<14}{'regime':<14}{'n':>5}{'ndcg@5':>22}{'ndcg@10':>22}{'map':>22}"
     print(header)
     print("-" * len(header))
@@ -141,9 +142,12 @@ def main():
                 continue
             pq = per_query_scores(rels_list)
             row = f"{mode:<14}{reg:<14}{len(rels_list):>5}"
+            rec = {"mode": mode, "regime": reg, "n": len(rels_list)}
             for m in ("ndcg@5", "ndcg@10", "map"):
                 mean, lo, hi = bootstrap_ci(pq[m])
                 row += f"{mean:>7.3f} [{lo:.3f},{hi:.3f}]"
+                rec[m] = [mean, lo, hi]
+            out_json["retrieval"].append(rec)
             print(row)
 
     # ------------------------------------------------------------------
@@ -188,9 +192,11 @@ def main():
         for name, model, is_fusion in [("FusionHead", fusion, True), ("NonAugmented", baseline, False)]:
             y_pred = predict(model, exs, embed_dim, market_dim, K, is_fusion, label_mean, label_std)
             print(f"    {name}:")
+            rec = out_json["downstream"].setdefault(reg, {"n": len(exs)}).setdefault(name, {})
             for metric_name, fn in [("dir. accuracy", directional_accuracy), ("Spearman rho", spearman_rho), ("R^2", r_squared)]:
                 point, lo, hi = bootstrap_metric_ci(y_true, y_pred, fn)
                 print(f"      {metric_name:<15} {point:>7.3f}  [{lo:.3f}, {hi:.3f}]")
+                rec[metric_name] = [point, lo, hi]
 
     print("\n" + "-" * 72)
     print("3. FAITHFULNESS BY REGIME (perturbation-magnitude vs shift correlation)")
@@ -244,6 +250,9 @@ def main():
         frac_same = sum(1 for r in regimes_retrieved if r == "post_hiking") / len(regimes_retrieved)
         same_regime_fracs.append(frac_same)
     mean_frac = float(np.mean(same_regime_fracs))
+    out_json["precedent_density_post_hiking"] = {"mean_same_regime_fraction": mean_frac, "n_queries": len(same_regime_fracs)}
+    from pipeline import save_json
+    save_json("regime_robustness.json", out_json)
     print(f"  Across {len(same_regime_fracs)} post_hiking queries, on average "
           f"{mean_frac:.0%} of each query's top-{K} retrieved precedents are "
           f"ALSO post_hiking-regime events; the rest are drawn from earlier "
@@ -252,7 +261,7 @@ def main():
 
     print("\n" + "=" * 72)
     print("REMINDERS: stub encoder + pragmatic stance label still apply.")
-    print("post_hiking has only 17 real events, ever, in this dataset --")
+    print(f"post_hiking has only {counts.get('post_hiking', 0)} real events in this dataset --")
     print("every post_hiking number above is a small-n result. Report it as")
     print("such, and revisit once more post-2022 ECB events are available.")
     print("=" * 72)

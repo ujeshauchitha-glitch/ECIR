@@ -4,23 +4,27 @@ statements, real market reactions (EA-MPD). Companion to run_demo.py, which
 runs the identical pipeline on synthetic data to validate the plumbing.
 
 HOW REAL THIS IS, PRECISELY:
-  - Corpus text (D): REAL. 3,052 real ECB speeches + 228 real press-
-    conference statements = 3,280 documents (data.load_ecb_corpus /
-    data.load_real_corpus).
+  - Corpus text (D): REAL. 3,052 real ECB speeches plus one press-conference
+    statement per linked event (the ECB's own published text, fetched by
+    fetch_ecb_pressconf.py; BIS-archive fallback for a few early dates).
   - Market-reaction vectors (m_i): REAL. From the ECB's own published
     EA-MPD dataset.
-  - Event set (E): 228 of the proposal's stated 315, NOT all of them. The
-    other 87 events have no matching press-conference text in either file
-    handed off so far (checked, not just unmatched by a lazy join -- see
-    data.py::load_real_corpus docstring). Every number below is over
-    those 228, not 315. Report it as 228, not as "315 with 87 missing" --
-    the smaller number is what was actually measured.
+  - Event set (E): every EA-MPD event (of the proposal's stated 315) that has
+    a press-conference statement. Events with none -- mostly 1999-2001
+    meetings that produced only a press release -- are left out, never linked
+    to a nearby unrelated document. The count actually used is printed at run
+    time and MUST be the number reported, not 315.
   - Encoder (f_theta): STILL THE STUB. make_stub_encoder() is a hash-based
     placeholder with no real semantic understanding of central-bank
     language -- the real trained encoder from the concurrent submission is
     not wired in yet. This means BM25 (real word overlap) is more
     trustworthy right now than dense_text_only/hybrid (stub embeddings).
     market_only does not depend on the encoder at all and is fully real.
+
+NOTE ON "hybrid" HERE: uses lam=0.5, tau=1.0, squared-distance kernel -- the
+historical defaults. With distances in basis points, tau=1 makes the market
+term ~0 for almost all pairs, so this "hybrid" is close to text-only. See
+ablations.py for the lambda/tau/kernel sweep and a tuned setting.
 
 BOTTOM LINE: market_only and BM25 numbers below are real and can be reasoned
 about. dense_text_only and hybrid numbers reflect the stub encoder's
@@ -61,9 +65,8 @@ def main() -> None:
     events = corpus.events
     n_events = len(events)
     print(f"\nReal corpus: {len(corpus.documents)} documents, "
-          f"{n_events} linked events (228 of the proposal's stated 315 -- "
-          f"the other 87 have no matching press-conference text in the "
-          f"data handed off so far).")
+          f"{n_events} linked events (of the proposal's stated 315; events with no "
+          f"press-conference statement available are left out -- see data.py).")
 
     pairs, threshold = build_ecb_precedent(events)
     rel_lookup = relevance_lookup(pairs)
@@ -102,11 +105,14 @@ def main() -> None:
     header = f"{'mode':<18}" + "".join(f"{m:>22}" for m in metric_names)
     print(header)
     print("-" * len(header))
+    results = {"n_events": n_events, "n_documents": len(corpus.documents), "modes": {}, "holm": {}}
     for mode in MODES:
         row = f"{mode:<18}"
+        results["modes"][mode] = {}
         for m in metric_names:
             mean, lo, hi = bootstrap_ci(per_query[mode][m])
             row += f"{mean:>7.3f} [{lo:.3f},{hi:.3f}]"
+            results["modes"][mode][m] = [mean, lo, hi]
         print(row)
 
     print("\nPaired bootstrap significance vs. hybrid (nDCG@10), Holm-corrected:")
@@ -123,10 +129,13 @@ def main() -> None:
         thr, significant = holm[name]
         print(f"  {name:<28} p={p:.4f}  Holm-threshold={thr:.4f}  "
               f"significant={significant}")
+        results["holm"][name] = {"p": p, "threshold": thr, "significant": bool(significant)}
+    from pipeline import save_json
+    save_json("retrieval_quality.json", results)
 
     print("\n" + "=" * 72)
     print("REMINDERS:")
-    print("1. n=228 events, not 315. Say so wherever these numbers are used.")
+    print(f"1. n={n_events} events, not 315. Say so wherever these numbers are used.")
     print("2. dense_text_only/hybrid use the STUB encoder -- re-run once the")
     print("   real trained encoder is wired into similarity.py.")
     print("3. market_only is expected to be near-ceiling by construction")
