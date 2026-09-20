@@ -140,7 +140,7 @@ def _val_mse(model, val_ex, embed_dim, market_dim, k, is_fusion, label_mean, lab
 
 def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean, label_std, epochs=EPOCHS, lr=LR, seed=SEED,
                 use_uncertainty=True, freeze_attention=False, verbose=True, standardize_inputs=True,
-                early_stopping_frac=0.2, min_examples_for_early_stopping=30):
+                early_stopping_frac=0.2, min_examples_for_early_stopping=30, patience=20):
     """use_uncertainty=False trains s_hat alone with squared error (the proposal's
     'absence of the uncertainty output' ablation). freeze_attention=True freezes the
     cross-attention projections at their random init and trains only the regression
@@ -154,7 +154,8 @@ def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean
     (build_examples returns them so). Nothing outside the training window is ever used -- held-out
     evaluation data stays untouched. Both heads are treated identically. Skipped when there are fewer
     than `min_examples_for_early_stopping` examples or early_stopping_frac is falsy. The selected epoch
-    is left on `model.best_epoch` (-1 if early stopping was not used).
+    is left on `model.best_epoch` (-1 if early stopping was not used). Training stops once `patience`
+    epochs pass without a new best validation MSE.
     """
     torch.manual_seed(seed)
     fit_ex, val_ex = examples, []
@@ -195,6 +196,10 @@ def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean
             if v < best_val:
                 best_val, best_epoch = v, epoch
                 best_state = {n: t.detach().clone() for n, t in model.state_dict().items()}
+            elif epoch - best_epoch >= patience:
+                if verbose:
+                    print(f"    epoch {epoch:3d}  no validation improvement for {patience} epochs -> stop")
+                break
         if verbose and (epoch % 30 == 0 or epoch == epochs - 1):
             print(f"    epoch {epoch:3d}  mean loss {total_loss / len(fit_ex):.4f}"
                   + (f"  val MSE {v:.4f}" if val_ex else ""))

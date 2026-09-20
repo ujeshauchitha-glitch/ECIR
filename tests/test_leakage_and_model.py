@@ -251,3 +251,22 @@ def test_early_stopping_never_looks_at_examples_outside_the_list_it_is_given():
     torch.manual_seed(0)
     b = FusionHead(16, 9); train.train_model(b, exs, 16, 9, 5, True, 0.0, 1.0, epochs=5, verbose=False)
     assert all(torch.equal(x, y) for x, y in zip(a.state_dict().values(), b.state_dict().values()))
+
+
+def test_patience_stops_training_once_validation_stops_improving():
+    exs = _toy_examples(100, flip_last_fraction=0.2)     # validation contradicts training -> best epoch is early
+    calls = {"n": 0}
+    orig = train._val_mse
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return orig(*a, **k)
+
+    train._val_mse = counting
+    try:
+        torch.manual_seed(0)
+        m = FusionHead(16, 9)
+        train.train_model(m, exs, 16, 9, 5, True, 0.0, 1.0, epochs=100, verbose=False, patience=5)
+    finally:
+        train._val_mse = orig
+    assert calls["n"] < 100 and calls["n"] <= m.best_epoch + 1 + 5      # stopped 5 epochs after the best one
