@@ -19,7 +19,7 @@ import train
 from data import MARKET_VECTOR_COLUMNS, load_real_corpus, stance_label
 from fusion_head import FusionHead, NonAugmentedHead
 from metrics import directional_accuracy, r_squared, spearman_rho
-from similarity import make_stub_encoder
+from similarity import make_default_encoder
 
 DATA_DIR = Path(__file__).parent / "data"
 RESULTS_DIR = Path(__file__).parent / "results"
@@ -49,6 +49,7 @@ class Cfg:
     uncertainty: bool = True
     freeze_attention: bool = False
     label: str = "ois_1y"
+    standardize_inputs: bool = True  # standardize retrieved market vectors (train-only stats)
     shuffle_labels: bool = False   # CONTROL: permute training labels; held-out skill must vanish
 
 
@@ -67,7 +68,7 @@ def load_setup(use_bis: bool = True) -> Setup:
         DATA_DIR / "Dataset_EA-MPD.xlsx",
     )
     events = sorted(corpus.events, key=lambda e: e.date)
-    encoder = make_stub_encoder()
+    encoder = make_default_encoder()
     embeddings = {e.event_id: encoder.embed(corpus.doc_by_id(e.doc_id).text) for e in events}
     return Setup(events, encoder, embeddings, corpus)
 
@@ -87,7 +88,8 @@ def fit_predict(train_ex, test_ex, cfg: Cfg, embed_dim: int, market_dim: int):
     torch.manual_seed(cfg.seed)   # weights are drawn at construction, so seed BEFORE building the model
     fusion = FusionHead(embed_dim, market_dim)
     train.train_model(fusion, train_ex, embed_dim, market_dim, cfg.k, True, mu, sd, epochs=cfg.epochs, lr=cfg.lr,
-                      seed=cfg.seed, use_uncertainty=cfg.uncertainty, freeze_attention=cfg.freeze_attention, verbose=False)
+                      seed=cfg.seed, use_uncertainty=cfg.uncertainty, freeze_attention=cfg.freeze_attention, verbose=False,
+                      standardize_inputs=cfg.standardize_inputs)
     torch.manual_seed(cfg.seed)
     base = NonAugmentedHead(embed_dim)
     train.train_model(base, train_ex, embed_dim, market_dim, cfg.k, False, mu, sd, epochs=cfg.epochs, lr=cfg.lr,

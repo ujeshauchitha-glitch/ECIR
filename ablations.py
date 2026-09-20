@@ -91,6 +91,7 @@ def downstream(setup, quick: bool) -> dict:
 
     configs = {
         "main (k=5, uncertainty on, ois_1y)": (Cfg(k=5), seeds_main),
+        "RAW (unstandardized) market inputs": (Cfg(standardize_inputs=False), seeds_abl),
         "k=1": (Cfg(k=1), seeds_abl), "k=3": (Cfg(k=3), seeds_abl),
         "k=10": (Cfg(k=10), seeds_abl), "k=20": (Cfg(k=20), seeds_abl),
         "uncertainty OFF (MSE loss)": (Cfg(uncertainty=False), seeds_abl),

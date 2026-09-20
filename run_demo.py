@@ -25,7 +25,7 @@ from baselines import BM25, rank_candidates
 from benchmark import build_ecb_precedent, relevance_lookup
 from data import make_synthetic_corpus
 from metrics import bootstrap_ci, holm_correction, paired_bootstrap_pvalue, per_query_scores
-from similarity import make_stub_encoder
+from similarity import make_default_encoder
 
 MODES = ["random", "bm25", "dense_text_only", "market_only", "hybrid"]
 
@@ -52,7 +52,7 @@ def main() -> None:
     doc_text_by_event = {
         e.event_id: corpus.doc_by_id(e.doc_id).text for e in events
     }
-    encoder = make_stub_encoder()
+    encoder = make_default_encoder()
     bm25 = BM25({eid: text for eid, text in doc_text_by_event.items()})
 
     # ranked_relevances_by_query[mode] = list over query events of

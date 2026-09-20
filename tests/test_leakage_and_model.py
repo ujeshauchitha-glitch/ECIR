@@ -172,3 +172,33 @@ def test_regime_boundaries():
     from regime_robustness import regime
     assert regime(dt.date(2014, 5, 31)) == "pre_zlb" and regime(dt.date(2014, 6, 1)) == "zlb"
     assert regime(dt.date(2022, 6, 30)) == "zlb" and regime(dt.date(2022, 7, 1)) == "post_hiking"
+
+
+# ---------------- input standardization ----------------
+def test_fusion_head_is_identity_standardized_until_stats_are_set():
+    m = FusionHead(16, 9)
+    assert torch.equal(m.m_mean, torch.zeros(9)) and torch.equal(m.m_std, torch.ones(9))
+    m.set_input_stats(np.full(9, 2.0), np.full(9, 4.0))
+    e, mv, s = make_inputs(b=1)
+    m.eval()
+    a = m(e, mv, s).s_hat
+    m2 = FusionHead(16, 9)
+    m2.load_state_dict(m.state_dict())
+    m2.set_input_stats(np.zeros(9), np.ones(9))
+    assert not torch.allclose(a, m2(e, mv, s).s_hat)                     # stats actually change the output
+    # ...and standardizing inside the model equals feeding pre-standardized inputs to an identity model:
+    assert torch.allclose(a, m2.eval()(e, (mv - 2.0) / 4.0, s).s_hat, atol=1e-5)
+
+
+def test_input_stats_come_from_training_examples_only():
+    rng = np.random.default_rng(0)
+    def ex(loc):
+        return {"e_q": rng.normal(size=16).astype(np.float32), "retrieved_m": (loc + rng.normal(size=(5, 9))).astype(np.float32),
+                "sim_scores": np.ones(5, np.float32), "label": float(rng.normal())}
+    train_ex = [ex(100.0) for _ in range(20)]
+    model = FusionHead(16, 9)
+    train.train_model(model, train_ex, 16, 9, 5, True, 0.0, 1.0, epochs=1, verbose=False)
+    assert np.allclose(model.m_mean.numpy(), 100.0, atol=1.0)            # fitted on training rows
+    raw = FusionHead(16, 9)
+    train.train_model(raw, train_ex, 16, 9, 5, True, 0.0, 1.0, epochs=1, verbose=False, standardize_inputs=False)
+    assert torch.equal(raw.m_mean, torch.zeros(9))                        # switch off -> untouched

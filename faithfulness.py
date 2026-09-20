@@ -51,7 +51,7 @@ import torch
 from data import load_real_corpus, stance_label
 from fusion_head import FusionHead, NonAugmentedHead
 from metrics import bootstrap_ci, bootstrap_metric_ci, paired_bootstrap_pvalue, spearman_rho
-from similarity import hybrid_similarity, make_stub_encoder
+from similarity import hybrid_similarity, make_default_encoder
 from train import K, LAM, TAU, build_examples, train_model
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -146,7 +146,7 @@ def main():
     )
     events = sorted(corpus.events, key=lambda e: e.date)
     doc_text = {e.event_id: corpus.doc_by_id(e.doc_id).text for e in events}
-    encoder = make_stub_encoder()
+    encoder = make_default_encoder()
     embeddings = {eid: encoder.embed(text) for eid, text in doc_text.items()}
 
     examples = build_examples(events, encoder, embeddings)

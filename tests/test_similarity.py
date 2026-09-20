@@ -83,3 +83,18 @@ def test_squared_vs_l2_kernel_both_hand_computed():
     l2 = hybrid_similarity(e, e, m_i, m_q, lam=0.0, tau=10.0, squared=False).score
     assert sq == pytest.approx(np.exp(-25 / 10)) and l2 == pytest.approx(np.exp(-5 / 10))
     assert hybrid_similarity(e, e, m_i, m_q, lam=0.0, tau=10.0).score == pytest.approx(sq)   # default unchanged
+
+
+def test_default_encoder_is_the_stub_unless_env_var_set(monkeypatch):
+    from similarity import make_default_encoder
+    monkeypatch.delenv("PRECEDENT_ENCODER", raising=False)
+    a, b = make_default_encoder(), make_stub_encoder()
+    assert a.dim == b.dim and np.array_equal(a.embed("inflation firm"), b.embed("inflation firm"))
+
+
+def test_encoder_cache_returns_read_only_shared_vector():
+    enc = make_stub_encoder()
+    v = enc.embed("inflation")
+    assert enc.embed("inflation") is v                       # memoized
+    with pytest.raises(ValueError):
+        v[0] = 1.0                                           # shared vector cannot be mutated by accident

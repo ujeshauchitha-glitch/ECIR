@@ -15,56 +15,30 @@ prediction" + Sec 5 "Fusion head").
     regression head architecture ... evaluated both frozen and lightly
     fine-tuned.
 
-WHAT THIS FILE IS: the trainable architecture g_phi, built exactly to that
-spec, and verified to run forward on real retrieved data (see __main__).
+WHAT THIS FILE IS: the trainable architecture g_phi, built to that spec. It is trained and evaluated
+by train.py / cv.py / ablations.py (Gaussian NLL), probed by faithfulness.py, and unit-tested
+(tests/test_leakage_and_model.py: every parameter receives gradient, output is invariant to the order
+of retrieved precedents, padded slots are ignored).
 
-WHAT THIS FILE IS NOT, YET: trained. Training needs a target label s_q (the
-"stance" a query event is scored against) for every event, and the proposal
-never says, anywhere, what s_q actually is numerically -- Appendix A calls
-it "predicted stance for query q" but gives no formula. This is a REAL,
-BLOCKING gap, not an oversight in this file: nothing computes gradients
-against nothing. See the bottom of this docstring.
+CROSS-ATTENTION MECHANISM, AS BUILT (a documented implementation choice, since the proposal names the
+ingredients -- e_q, retrieved outcomes, sim(q,di) -- but not the exact mechanism): e_q is projected to a
+query vector; each retrieved market vector m_i is projected to a key and a value; attention logits are the
+learned query-key compatibility PLUS the given retrieval similarity sim(q,di) as an additive bias (so a
+precedent retrieval already trusts more also gets more weight in the fusion). Revisit with whoever owns
+Sec 5 if a different mechanism was intended.
 
-CROSS-ATTENTION MECHANISM, AS BUILT (a documented implementation choice,
-since the proposal names the ingredients -- e_q, retrieved outcomes,
-sim(q,di) -- but not the exact mechanism): e_q is projected to a query
-vector; each retrieved market vector m_i is projected to a key and a value;
-attention logits are the learned query-key compatibility PLUS the given
-retrieval similarity sim(q,di) as an additive bias in log-space (so a
-precedent retrieval already trusted more also gets more weight in the
-fusion, rather than the fusion re-deriving relevance from scratch). Revisit
-with whoever owns Sec 5 if a different mechanism was intended.
+REGRESSION HEAD: "consistent with the existing per-signal head design" -- that design lives in the
+concurrent submission's codebase, which this project does not have. What's here is a standard two-layer
+MLP producing (mean, log-variance) -> (s_hat, sigma_hat). Swap it for the real design when available;
+nothing else depends on its internals.
 
-REGRESSION HEAD: "consistent with the existing per-signal head design" --
-that design lives in the concurrent submission's codebase, which this
-project does not have. What's here is a standard two-layer MLP producing
-(mean, log-variance) -> (s_hat, sigma_hat). Swap it for the real per-signal
-head design once you have it; nothing else in this file depends on its
-internals.
+STANCE TARGET (still a decision for the owner): the proposal never defines a numeric stance s_q. The
+current stand-in is the 1-year OIS change (data.stance_label); ablations.py checks sensitivity to two
+alternatives. The teammate confirmed (2026-09-14) that their own definition does not exist yet.
 
-=====================================================================
-OPEN BLOCKER, put here so it can't be missed: what is s_q (the label)?
-=====================================================================
-Two live candidates, neither confirmed:
-  (a) A market-derived scalar computed FROM each event's own market_vector
-      m_i -- e.g. the sign/magnitude of the short-rate OIS surprise, or a
-      principal component of it (this is what EA-MPD's original paper
-      calls "Target/Timing/FG/QE factors" -- NOT the same as the raw
-      columns in data.MARKET_VECTOR_COLUMNS, which are unreduced price
-      changes, not factors).
-  (b) A dictionary/text-based hawkish-minus-dovish score computed from the
-      speech text itself (the older, human-judgment-adjacent approach the
-      proposal's related-work section explicitly distances itself from).
-  (c) Something the concurrent submission (the encoder-training paper)
-      already defines, that this project is meant to reuse -- proposal
-      Sec 6 says "reused evaluation machinery ... consistent with existing
-      project specifications," implying a definition exists somewhere
-      this codebase doesn't have visibility into.
-DO NOT pick one of these silently. Confirm with whoever owns Sec 4, then
-write the label-construction function this file currently has no
-substitute for. Until then, `s_hat_q`/`sigma_hat_q` below are real
-NUMBERS from a real forward pass through an UNTRAINED network -- i.e.
-noise. They validate the architecture runs; they are not predictions.
+LEAKAGE: at prediction time this head must only see the query's TEXT embedding and PAST events' known
+outcomes -- never the query's own market vector (the label is computed from it). See
+train.build_examples and tests/test_leakage_and_model.py.
 """
 from __future__ import annotations
 
@@ -108,11 +82,22 @@ class FusionHead(nn.Module):
         self.value_proj = nn.Linear(market_dim, attn_hidden)
         self._attn_scale = attn_hidden ** 0.5
 
+        # Retrieved market vectors are in basis points / percent with heavy tails, so they are standardized
+        # before the attention layer. The statistics are fitted on TRAINING data only (see set_input_stats
+        # and train.train_model). Identity by default, so a freshly built model behaves as before.
+        self.register_buffer("m_mean", torch.zeros(market_dim))
+        self.register_buffer("m_std", torch.ones(market_dim))
+
         self.head = nn.Sequential(
             nn.Linear(embed_dim + attn_hidden, head_hidden),
             nn.ReLU(),
             nn.Linear(head_hidden, 2),  # [mean, log_var]
         )
+
+    def set_input_stats(self, mean, std) -> None:
+        """Set the per-dimension mean/std used to standardize retrieved market vectors."""
+        self.m_mean.copy_(torch.as_tensor(mean, dtype=torch.float32))
+        self.m_std.copy_(torch.as_tensor(std, dtype=torch.float32).clamp_min(1e-6))
 
     def forward(
         self,
@@ -120,6 +105,7 @@ class FusionHead(nn.Module):
         retrieved_m: torch.Tensor,    # (batch, k, market_dim)
         sim_scores: torch.Tensor,     # (batch, k) -- hybrid_similarity() scores
     ) -> FusionOutput:
+        retrieved_m = (retrieved_m - self.m_mean) / self.m_std
         q = self.query_proj(e_q).unsqueeze(1)          # (batch, 1, attn_hidden)
         k = self.key_proj(retrieved_m)                  # (batch, k, attn_hidden)
         v = self.value_proj(retrieved_m)                 # (batch, k, attn_hidden)
@@ -172,7 +158,7 @@ if __name__ == "__main__":
 
     from baselines import rank_candidates
     from data import load_real_corpus
-    from similarity import make_stub_encoder
+    from similarity import make_default_encoder
 
     DATA_DIR = Path(__file__).parent / "data"
     corpus = load_real_corpus(
@@ -181,7 +167,7 @@ if __name__ == "__main__":
         DATA_DIR / "Dataset_EA-MPD.xlsx",
     )
     events = corpus.events
-    encoder = make_stub_encoder()
+    encoder = make_default_encoder()
     doc_text_by_event = {e.event_id: corpus.doc_by_id(e.doc_id).text for e in events}
 
     k = 5

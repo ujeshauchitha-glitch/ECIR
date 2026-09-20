@@ -47,7 +47,7 @@ import torch
 from data import load_real_corpus, stance_label
 from fusion_head import FusionHead, NonAugmentedHead
 from metrics import bootstrap_metric_ci, directional_accuracy, r_squared, spearman_rho
-from similarity import hybrid_similarity, make_stub_encoder
+from similarity import hybrid_similarity, make_default_encoder
 
 DATA_DIR = Path(__file__).parent / "data"
 K = 5
@@ -124,13 +124,18 @@ def gaussian_nll(s_hat, sigma_hat, target):
 
 
 def train_model(model, examples, embed_dim, market_dim, k, is_fusion, label_mean, label_std, epochs=EPOCHS, lr=LR, seed=SEED,
-                use_uncertainty=True, freeze_attention=False, verbose=True):
+                use_uncertainty=True, freeze_attention=False, verbose=True, standardize_inputs=True):
     """use_uncertainty=False trains s_hat alone with squared error (the proposal's
     'absence of the uncertainty output' ablation). freeze_attention=True freezes the
     cross-attention projections at their random init and trains only the regression
     head (one reading of the proposal's 'frozen versus fine-tuned fusion' ablation --
     encoder fine-tuning itself is not possible with the stub encoder)."""
     torch.manual_seed(seed)
+    if is_fusion and standardize_inputs:
+        # Standardize the retrieved outcome vectors with statistics of the TRAINING examples' retrieved
+        # sets (past events only) -- never anything from validation/test.
+        rows = np.concatenate([ex["retrieved_m"] for ex in examples], axis=0)
+        model.set_input_stats(rows.mean(0), rows.std(0))
     if freeze_attention and is_fusion:
         for name in ("query_proj", "key_proj", "value_proj"):
             for prm in getattr(model, name).parameters():
@@ -206,7 +211,7 @@ def main():
     events = sorted(corpus.events, key=lambda e: e.date)
     doc_text = {e.event_id: corpus.doc_by_id(e.doc_id).text for e in events}
 
-    encoder = make_stub_encoder()
+    encoder = make_default_encoder()
     embeddings = {eid: encoder.embed(text) for eid, text in doc_text.items()}
 
     examples = build_examples(events, encoder, embeddings)

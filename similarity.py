@@ -132,3 +132,49 @@ def hybrid_similarity(
     market_term = float(np.exp(-(sq if squared else np.sqrt(sq)) / tau))
     score = lam * text_term + (1 - lam) * market_term
     return SimilarityResult(score=score, mode="hybrid")
+
+
+# ---------------------------------------------------------------------------------------------
+# Real-encoder switch. The scripts call make_default_encoder(); set the environment variable
+#     PRECEDENT_ENCODER=<path-or-name of a Hugging Face-style checkpoint>
+# to use a real model everywhere at once, then RE-RUN every experiment. Unset -> the stub.
+# ---------------------------------------------------------------------------------------------
+def make_hf_encoder(path: str, max_tokens: int = 512, pooling: str = "mean") -> FrozenEncoder:
+    """UNTESTED against a real checkpoint (transformers is not installed in the environment this was
+    written in, and the trained encoder from the companion work was never available). It follows the
+    standard recipe -- chunk each long document into <= max_tokens windows, take the mean-pooled (or
+    [CLS]) last hidden state of each chunk, average the chunks, L2-normalise -- but if the companion
+    encoder uses a different interface (custom head, sentence-transformers, different pooling),
+    replace this with a FrozenEncoder(embed_fn, dim) around that interface; nothing else changes.
+    Statements are ~6,000 words, far beyond one window, hence the chunking.
+    """
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(path)
+    model = AutoModel.from_pretrained(path).eval()
+    dim = int(model.config.hidden_size)
+    step = max_tokens - 2  # room for special tokens
+
+    @torch.no_grad()
+    def embed(text: str) -> np.ndarray:
+        ids = tok(text, add_special_tokens=False, truncation=False)["input_ids"]
+        chunks = [ids[i:i + step] for i in range(0, max(len(ids), 1), step)] or [[]]
+        vecs = []
+        for c in chunks:
+            enc = tok.prepare_for_model(c, max_length=max_tokens, truncation=True, return_tensors="pt")
+            out = model(**{k: v.unsqueeze(0) if v.dim() == 1 else v for k, v in enc.items()}).last_hidden_state[0]
+            vecs.append(out[0] if pooling == "cls" else out.mean(0))
+        v = torch.stack(vecs).mean(0).numpy().astype(np.float64)
+        n = np.linalg.norm(v)
+        return v / n if n > 0 else v
+
+    return FrozenEncoder(embed_fn=embed, dim=dim)
+
+
+def make_default_encoder() -> FrozenEncoder:
+    """The stub unless PRECEDENT_ENCODER is set (see above)."""
+    import os
+
+    path = os.environ.get("PRECEDENT_ENCODER")
+    return make_hf_encoder(path) if path else make_stub_encoder()

@@ -65,7 +65,7 @@ from metrics import (
     bootstrap_ci, bootstrap_metric_ci, directional_accuracy, per_query_scores,
     r_squared, spearman_rho,
 )
-from similarity import make_stub_encoder
+from similarity import make_default_encoder
 from train import K, SEED, build_examples, predict, train_model
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -96,7 +96,7 @@ def main():
     )
     events = sorted(corpus.events, key=lambda e: e.date)
     doc_text = {e.event_id: corpus.doc_by_id(e.doc_id).text for e in events}
-    encoder = make_stub_encoder()
+    encoder = make_default_encoder()
     embeddings = {eid: encoder.embed(text) for eid, text in doc_text.items()}
 
     counts = Counter(regime(e.date) for e in events)
