@@ -28,8 +28,14 @@ the real encoder is wired in and everything is re-run.
 
 ## Only the owner / teammate can unblock these
 1. **Real trained encoder** (from the companion work). Every text-similarity number is placeholder-quality.
-   Swap: `export PRECEDENT_ENCODER=<checkpoint>` (HF adapter in `similarity.make_hf_encoder`, **untested** — no checkpoint
-   or `transformers` was available) or wrap it as `FrozenEncoder(embed_fn, dim)`. Then re-run in this order and rebuild:
+   Swap: `export PRECEDENT_ENCODER=<checkpoint>` (HF adapter in `similarity.make_hf_encoder`). **Update 2026-09-21:** the
+   adapter was tested against real checkpoints and fixed (it broke on two tokenizer methods removed in transformers 5.x);
+   it now batches chunks and caches vectors on disk (`cache/`, shared by all scripts); 10 tests in
+   `tests/test_real_encoder_adapter.py`. A real market-supervised encoder now exists: the teammate's fine-tune trained
+   successfully (the "NaN" was missing signal wiring), exported as `models/finetuned_encoder` in `ECIR_transfer.zip`.
+   Optional: `PRECEDENT_ENCODER_DEVICE=cuda`. **Known issue before trusting text-retrieval numbers:** with every encoder
+   tried, a rate-hike and a rate-cut statement score cosine ~0.999 (mean-pooled embeddings sit in a narrow cone);
+   mean-centring on TRAINING documents before cosine is the standard fix, not yet applied. Then re-run in this order and rebuild:
    `run_real.py, train.py, faithfulness.py, faithfulness_seeds.py [--shuffle], regime_robustness.py, ablations.py,
    cv.py, cv.py --lomo --stride 3, leak_control.py`, then `python make_paper.py`. (Set `OMP_NUM_THREADS=1`; run in parallel.)
 2. **Stance definition.** The proposal has none. Stand-in = 1-year OIS change in bp (`data.stance_label`). Teammate (14 Sep)

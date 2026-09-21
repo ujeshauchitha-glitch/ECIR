@@ -78,6 +78,24 @@ _DOVISH_WORDS = [
 ]
 
 
+def _raise_csv_field_limit() -> int:
+    """Raise csv's per-field cap as far as this interpreter allows, and return it.
+
+    The ECB corpus keeps a whole speech in one `contents` field, far beyond csv's 128 KB
+    default. `csv.field_size_limit(sys.maxsize)` is the usual incantation, but the limit is
+    stored in a C long: on Windows builds where that is 32-bit, sys.maxsize (2**63-1)
+    raises OverflowError and the corpus cannot be read at all. Halving until it is accepted
+    keeps the largest value the platform supports, on every interpreter.
+    """
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return limit
+        except OverflowError:
+            limit //= 2
+
+
 def make_synthetic_corpus(
     n_docs: int = 400,
     n_events: int = 315,
@@ -158,7 +176,7 @@ def load_ecb_corpus(csv_path: str | Path) -> Corpus:
     text should filter explicitly and should decide that themselves rather
     than have it decided here.
     """
-    csv.field_size_limit(sys.maxsize)
+    _raise_csv_field_limit()
     documents: list[Document] = []
     with open(csv_path, encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="|")
@@ -309,7 +327,7 @@ def _bis_press_conference_rows(bis_csv_path, event_dates: set, cache_path) -> di
         if cached.get("dates") == key:
             return {dt.date.fromisoformat(k): v for k, v in cached["rows"].items()}
 
-    csv.field_size_limit(sys.maxsize)
+    _raise_csv_field_limit()
     rows: dict[dt.date, dict] = {}
     with open(bis_csv_path, encoding="utf-8", errors="replace", newline="") as f:
         for row in csv.DictReader(f):

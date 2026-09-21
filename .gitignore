@@ -7,3 +7,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Encoder vector cache (similarity.make_default_encoder writes cache/emb_<model>.npz).
+# Regenerated on demand; model-specific; not source.
+/cache/
+.pytest_cache/
